@@ -1,3 +1,17 @@
+## GUI publication complete; numerical development paused - 2026-10-10
+
+Definitive restart: C:/Github/ANYmarine/CHECKPOINT.md. Published source baselines
+ANYmarine 8e97dbb97e1c85f35d25134fd883ea3197aae27f, ANYhydro 1bb3b82cd94ad3229156dc3da51b56da410396d6 on main;
+remote identities verified. Installed GPU startup/status/saved waves pass.
+Status39, startup22, waves43, foundation54 pass/1 skip; hydro77 pass.
+W5 remains NO_GO, native energy-point-02 consumed/failed/unqualified and audit
+100/100 consistency only. No new scientific run. Historical limits preserved;
+new GUI pools frozen at handoff. Root coordinates Mistral; no Astra.
+Measured public note docs/GUI_MAIN_HANDOFF_20261010.md; full local evidence
+C:/ANYworkspaceWork/anymarine-evidence/gui-main-handoff-20261010/.
+Resume first with bounded stored-array case/energy diagnosis, not a native retry.
+Saved UTC 2026-10-10T19:05:39.458648+00:00. Historical notes below retained verbatim.
+
 # W2 handoff — ANYhydro Capytaine development adapter
 
 Date: 2026-10-08. Repository: C:/ANYworkspaceWork/ANYhydro. Mode: Edit.

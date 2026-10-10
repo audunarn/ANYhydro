@@ -15,8 +15,8 @@ Measured checks in the isolated Windows Python3.13 runtime:
 - Status loader and Qt integration:39 passed after provenance/corrupt-data repairs.
 - Startup/example/menu regressions:22 passed.
 - Wave-loading/replay regressions:43 passed.
-- ANYmarine published headless CI selection:54 passed,1 skipped; inspect local
-  JUnit evidence for the platform-specific skip (it is not counted as a pass).
+- ANYmarine published headless CI selection:54 passed,1 skipped; the symlink refusal test
+  is skipped because Windows symlinks are unavailable (not counted as a pass).
 - ANYhydro records/schema/transforms:64 passed; persistence13 passed after a
   shared-temp-directory permission error was repaired in the check harness.
 - Both wheels built and installed with no dependency downloads.69 ANYmarine
