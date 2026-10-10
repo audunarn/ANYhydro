@@ -246,3 +246,18 @@ are unchanged; before/after hashes are retained in source reconciliation.
 The installed hydro wheel remains current because this tail changes only tests,
 reference data, CI and documentation. Clean GitHub CI is pending at this commit;
 the final checkpoint will record the actually observed source matrix result.
+
+## Observed source CI success and final checkpoint
+
+Final source commit `4f10a55d8b45b57249b0aa8ca37c3b1cf1b44022` passed all four
+clean GitHub matrix jobs: https://github.com/audunarn/ANYhydro/actions/runs/38082088864.
+Linux Python3.11/3.13:819 passed,1 platform skip each. Windows Python3.11/3.13:
+799 passed,21 platform skips each. Wheels built successfully on all four legs.
+Marine source `77c308bdc875c43ad4065f2332a5d64fde23d5a1` also passed its complete
+Windows/Linux3.11/3.13 matrix:
+https://github.com/audunarn/ANYmarine/actions/runs/38079388189.
+These are the observed source baselines; a documentation-only commit saves the
+final checkpoint. Both CHECKPOINT.md files identify the current restart state,
+which keeps scientific development paused and W5 NO_GO. Remaining numerical,
+optional integration and qualification gates are not promoted by CI success.
+All owned workers are terminal and all delivery execution pools frozen.

@@ -1,3 +1,18 @@
+## Final GUI/main handoff accepted; numerical work paused - 2026-10-10
+
+Current restart C:/Github/ANYmarine/CHECKPOINT.md; source main baselines
+ANYmarine 77c308bdc875c43ad4065f2332a5d64fde23d5a1, ANYhydro 4f10a55d8b45b57249b0aa8ca37c3b1cf1b44022.
+Both GitHub Windows/Linux3.11/3.13 clean-CI matrices observed SUCCESS.
+Hydro portable coverage is explicit34 modules;15 exclusions retain mandatory
+integration/qualification obligations. Process-lifecycle repair and immutable
+legacy test oracles are recorded separately; numerical algorithms unchanged.
+W5 NO_GO.
+Latest installed GUI reflects status and includes the Linux root-link refusal.
+No new native campaign. All workers terminal/pools frozen; recovered CI-check
+accounting gap/overrun preserved in docs/CLEAN_CI_HANDOFF_20261010.md.
+Resume with bounded Mistral stored-array diagnosis, not a consumed native retry.
+Saved UTC 2026-10-10T20:11:30.683224+00:00. Historical sections below preserved verbatim.
+
 ## GUI publication complete; numerical development paused - 2026-10-10
 
 Definitive restart: C:/Github/ANYmarine/CHECKPOINT.md. Published source baselines
