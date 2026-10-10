@@ -3,6 +3,7 @@ on: [push, pull_request, workflow_dispatch]
 jobs:
   base:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
         python: ['3.11', '3.13']

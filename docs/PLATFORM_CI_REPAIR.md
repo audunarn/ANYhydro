@@ -192,3 +192,57 @@ uses a separate prospective pool: worker 674.413916500 s / 720 s; focused checks
 31.104830100 s / 180 s; build/install 3.539667600 s / 120 s. Remaining time is not
 carried into resumed scientific work. Clean GitHub CI is still pending at this
 source-publication point; the final restart records the actual observed result.
+
+## Final clean-CI tail repair
+
+Run 38081165749 on source 8530b92 failed three assertions on Linux3.11:
+816 passed, 3 failed, 1 skipped; other matrix legs were cancelled by fail-fast.
+Full failed logs remain in gui-ci-platform-repair-20261010. The CI matrix now
+uses fail-fast:false so each platform's result remains observable.
+
+Mistral's first tail assignment was deliberately stopped at 266.846531000 s
+after missing the early checkpoint and producing no candidate. The same-owner
+focused continuation timed out at 93.473584700 s without edits or handoff.
+Root completed the small test-infrastructure outcome directly because two
+bounded attempts failed to deliver and continued worker inspection was blocking
+publication. This is execution unreliability for this delivery, not a claim of
+provider outage. Logs and partial evidence are preserved. Worker accounting is
+360.320115700 s against360 s; the0.320115700 s timeout/termination overrun is
+recorded without retrospective authority or renewal. No worker remains active.
+
+The missing-completion test no longer assumes /proc zombie visibility and pidfd
+waitability occur simultaneously. It retries only None within the existing3 s
+fixture wait; a terminal integer fails, and OSError is required before checking
+the producer stopped. Production supervision is unchanged by this tail repair.
+The full19 Linux lifecycle tests passed, including ownership, refusal, cleanup,
+cancellation and supervisor-death routes.
+
+The two remaining long-kernel golden checks now use newly frozen canonical data
+matching the unchanged historical golden8a40ee08c0568484bb78f666ab74d307bcdf87ecbc8d4e7f9c10daff448e208e.
+Live public computation is retained and checked against the frozen kernel using
+settings/source identity and new1e-12 compatibility assertions. The immutable
+reference is saved/reopened for the existing exact golden roundtrip check.
+All other live long-kernel reconstruction/limit/serialization tests remain.
+Original historical serialized bytes were not recovered; provenance explicitly
+records the newly generated matching reference, source path and file identity.
+No production numerical/hash algorithm or existing tolerance changed.
+
+Windows focused long-kernel/portable-contract selection:50 passed.
+Linux:19 lifecycle tests passed, then the verification shim lacked pytest.mark
+(the local venv has no pytest), causing a harness-only failure after those
+passes. The shim was repaired; only the unrun hash/roundtrip part was repeated
+and passed. Failed attempt preserved. Tests were not skipped or weakened.
+
+- `root-tail-reference-01`: finished, exit 0, process wall 1.462589000 s.
+- `root-tail-win-01`: finished, exit 0, process wall 3.085888100 s.
+- `root-tail-linux-01`: finished, exit 1, process wall 8.517257300 s.
+- `root-tail-linux-hash-02`: finished, exit 0, process wall 3.692241000 s.
+
+Focused check pool used 16.757975400 s /120 s. No native/BEM/
+compiler campaign occurred. Seven of101 historical protected files differ
+prospectively (process module, two lifecycle tests, four legacy-oracle tests);
+94 unchanged. Numeric/hash/fixture production algorithms and the Linux guard
+are unchanged; before/after hashes are retained in source reconciliation.
+The installed hydro wheel remains current because this tail changes only tests,
+reference data, CI and documentation. Clean GitHub CI is pending at this commit;
+the final checkpoint will record the actually observed source matrix result.

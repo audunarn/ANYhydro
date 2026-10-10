@@ -212,7 +212,15 @@ class LinuxOwnedProcessTests(unittest.TestCase):
         p=self.create('sleep');wait_for(lambda:(self.root/'producer.json').exists())
         signal.pidfd_send_signal(p._pidfd,signal.SIGKILL)
         wait_for(lambda:stopped(p.supervision['guard_pid']))
-        with self.assertRaises(OSError):p.poll()
+        # /proc can expose zombie state before waitid reports a waitable
+        # child. Wait within the existing bound for the refusal; no valid
+        # completion code (including zero) is allowed on this missing packet.
+        def refused():
+            try:code=p.poll()
+            except OSError:return True
+            self.assertIsNone(code,'missing completion packet reported a result')
+            return False
+        wait_for(refused)
         wait_for(lambda:stopped(p.pid))
 
     def test_cleanup_timeout_retains_retry_handle(self):
