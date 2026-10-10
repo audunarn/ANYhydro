@@ -1,0 +1,120 @@
+{
+  "format": "anyhydro-hams-phase-source-recipe-v1",
+  "upstream_commit": "cf9583c1609a5d1b904d24e09dff81e383b2ffad",
+  "upstream_license": "Apache-2.0; preserve source notices",
+  "source_sha256": {
+    "src/AssbMatx.f90": "0844d16d6d01c082c027a65142729fce350f33a93e577581ab125446bfcb0d31",
+    "src/AssbMatxMulti.f90": "bfdf6f32ccfcd70c4c6296a794a1b506c93c92328af7baa2cabff52a536d59ab",
+    "src/AssbMatx_irr.f90": "f13ad0e2ca9309e2e8b67fd9fbfc56fe2c3a51e5946f4e8e757e3db06938466b",
+    "src/AssbMatx_irrMulti.f90": "45b0e81e5857873a4c77512fe9fd06876afa035287023a1c6500105e337e6178",
+    "src/BodyIntgr.f90": "cf5647902c09f72d4e1f4b4df954bbad95be043bd4b8850ef76136f0bacf0ca9",
+    "src/BodyIntgrMulti.f90": "52b352295428904c50b3521b8d14fef11c201131a1fcae165687a0c2def810f5",
+    "src/BodyIntgr_irr.f90": "d11ecdb1759f6821f32b57088a8010e38b02b327ff5a368a8b9870fb0d40879c",
+    "src/BodyIntgr_irrMulti.f90": "36a5933857ed3b4bae7ff54dc7ebcb6c6f9af964a1029260e181a36f3af84b94",
+    "src/CalGreenFunc.f90": "8bc32070e54e6eea6029bb8cddefade139636d3d8c6de9a5d992257a831790c0",
+    "src/CalGreenFuncMulti.f90": "2a506352917191cf9590124a27c091ea42c258567cb47e26096f2042fbac5bd1",
+    "src/FinGreen3D.f90": "bfcc3e5af3c4d207bb1bfc768a3c88f47e8b59934efc42e84b2a6024e0757076",
+    "src/FinGrnExtSubs.f90": "5a76d95499dd554f94534e877a44d8ebe65c41b79b1b844b7e78f36da044c712",
+    "src/HAMS_Prog.f90": "51add28fbfa6d55b7e449642f5e4b0d8d81dac996417f03f46cb88979a45e986",
+    "src/HydroStatic.f90": "96b69190abd0d552bcd21cd632e56f5a39e3b85bcf1345db29179dd9da8e13e5",
+    "src/HydroStaticMulti.f90": "dd6ec60d622f192f9705c8ac1ecb734536ee6ecabf3f9400412fa211df572d64",
+    "src/ImplementSubs.f90": "d9a426d4bec9818082a16077725d91ad41966125cfb82c917adca4ad8461df85",
+    "src/InfGreen_Appr.f90": "5ef74f368c49878d4d358d2fe6efb2ba8a1d739b3f81d4011922a20940f213d5",
+    "src/InputFiles.f90": "c091517fb062eda8eab6ea3478cff17c856c6b1f858ac1236f8f70201d817103",
+    "src/NormalProcess.f90": "8ffafdbaa829dbe808e91028f2993cfbf8609e47bd9be70a1ccf54f9ce4e6dc6",
+    "src/PatclVelct.f90": "8f36fdbc43737c5d955afd241b9f08005a36e626063886458964a51f24c6df1f",
+    "src/PotentWavForce.f90": "0484c09a17bb517f23f51a6054f982ddee0117fe9edc9e38e2b2a57258694db2",
+    "src/PotentWavForceMulti.f90": "05023f42a3b4177f604b7c0760cb3e816f26a9b5618984f5f2f2d2566ccc384c",
+    "src/PressureElevation.f90": "31473342747d4af744d83954b41ea6f670997303d693884d3f6ad2841b8d2210",
+    "src/PressureElevationMulti.f90": "49f0513bc1351016e4368f39a828f82be26d8584ac5c6a38091bd6e2b05cf893",
+    "src/PrintOutput.f90": "1a72894ee7fa86995007be5acb526e420fc3065ea2280c23d19f26b295ea1c46",
+    "src/ReadPanelMesh.f90": "a2248298ed5b8094fa879b1b06e70da6a1260ecace6e9e1e6e4b3b3048e449f3",
+    "src/ReadPanelMeshMulti.f90": "d5957b0815c037c699c4b54360696157e41579b9552155dd2d615cffc50ba8ae",
+    "src/SingularIntgr.f90": "552a50eea118f31b2cb3f03e5eab2b21b294f5a50156f205572c591c7f3fd7ca",
+    "src/SingularIntgrMulti.f90": "5d02f615ab504d0f029712bbba97f0e45a2aa4c319031191db3f01132df72518",
+    "src/SolveMotion.f90": "37dc054a83502efad6a24496a3c68147683bb071302a782c52e62bdda0f6b34f",
+    "src/SolveMotionMulti.f90": "143d9a603cdaa38af40f0cc7a6ce5f61e6fbb35d39c35ac22e4c67ff68b2146a",
+    "src/WavDynMods.f90": "cfc9db2b8021301258aa7d0981028bf098bedc7d56ad7c790e1a24aad7441b65",
+    "src/WavDynSubs.f90": "1724b44bc54ac6956ae6f076c4e8a9777ad0911590f8097c24ede4506deee0eb"
+  },
+  "phase_writers": [
+    "src/PotentWavForce.f90",
+    "src/PotentWavForceMulti.f90"
+  ],
+  "phase_before": "PHS(MD)=ATAN2D(NIMG,NREL)*180.0D0/PI",
+  "phase_after": "PHS(MD)=ATAN2D(NIMG,NREL)",
+  "gnu_compatibility": {
+    "path": "src/InputFiles.f90",
+    "before": "inquire(directory=dir, exist=exists)",
+    "after": "inquire(file=dir, exist=exists)",
+    "reason": "Intel directory inquiry unsupported by GNU; identical IO-only edit in paired builds"
+  },
+  "compiler_source_order": [
+    "WavDynMods.f90",
+    "InputFiles.f90",
+    "WavDynSubs.f90",
+    "PatclVelct.f90",
+    "FinGrnExtSubs.f90",
+    "InfGreen_Appr.f90",
+    "FinGreen3D.f90",
+    "SingularIntgr.f90",
+    "SingularIntgrMulti.f90",
+    "CalGreenFunc.f90",
+    "CalGreenFuncMulti.f90",
+    "BodyIntgr_irr.f90",
+    "BodyIntgr.f90",
+    "BodyIntgr_irrMulti.f90",
+    "BodyIntgrMulti.f90",
+    "AssbMatx_irr.f90",
+    "AssbMatx.f90",
+    "AssbMatx_irrMulti.f90",
+    "AssbMatxMulti.f90",
+    "HydroStatic.f90",
+    "HydroStaticMulti.f90",
+    "NormalProcess.f90",
+    "ReadPanelMesh.f90",
+    "ReadPanelMeshMulti.f90",
+    "ImplementSubs.f90",
+    "PotentWavForce.f90",
+    "PotentWavForceMulti.f90",
+    "PressureElevation.f90",
+    "PressureElevationMulti.f90",
+    "SolveMotion.f90",
+    "SolveMotionMulti.f90",
+    "PrintOutput.f90",
+    "HAMS_Prog.f90"
+  ],
+  "acceptance": "development producer recipe only; not an admitted backend or scientific qualification",
+  "limit_reorder": {
+    "path": "src/PotentWavForceMulti.f90",
+    "start": "      SUBROUTINE ReorderAmssDamp(",
+    "end": "      END SUBROUTINE ReorderAmssDamp",
+    "before_sha256": "fd0f7d00cecf915ab5a60a145e14759ccc64f51e7d1d80098ed3b5246b444d5b",
+    "replacement_file": "hams_reorder_limits.f90.inc",
+    "replacement_sha256": "47ff56cccc9e9b8e0f070eb6dd5c4837b1382922e3072f5aa9ad172d96177c2b",
+    "platform": "GNU only; standalone file-I/O evidence, no compiled backend profile admission",
+    "reason": "Preserve physical fixed-width limit rows and fail closed on incomplete/duplicate native inventory before staged publication"
+  },
+  "gravity_consistency": {
+    "path": "src/WavDynSubs.f90",
+    "start": "      SUBROUTINE DISPERSION(",
+    "end": "      END SUBROUTINE DISPERSION",
+    "before_sha256": "23359b9248e91925a979d64f963a5ab19f98f0058ee3e1671beab4ff394c6d63",
+    "gravity": 9.80665,
+    "edits": [
+      {
+        "before": "      IMPLICIT NONE",
+        "after": "      USE Const_mod, ONLY: G\r\n      IMPLICIT NONE"
+      },
+      {
+        "before": "REAL*8 T,X,U,Y,DNM,G,PI",
+        "after": "REAL*8 T,X,U,Y,DNM,PI"
+      },
+      {
+        "before": "DATA G,PI/9.807d0,3.141592653589793d0/",
+        "after": "DATA PI/3.141592653589793d0/"
+      }
+    ],
+    "reason": "One existing physical gravity shared by propagating/evanescent dispersion and incident/finite Green routines; no renormalization or scientific qualification"
+  }
+}

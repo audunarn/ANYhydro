@@ -1,0 +1,2 @@
+# Preserve exact source/artifact bytes used by development evidence hashes.
+* -text

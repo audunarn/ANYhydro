@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anyhydro"
+version = "0.1.0"
+description = "Neutral hydrodynamic data model, validation, transformations and persistence for the ANY marine ecosystem"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MPL-2.0"
+authors = [{ name = "ANY ecosystem development" }]
+keywords = ["hydrodynamics", "potential-flow", "multibody", "marine"]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "xarray>=2023.1",
+]
+
+[project.optional-dependencies]
+wamit = ["ANYfileio>=0.3.2"]
+sea-state = ["ANYloads>=0.1.0"]
+capytaine = ["capytaine>=3.0,<3.1"]
+dev = [
+    "pytest>=7",
+    "build>=1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

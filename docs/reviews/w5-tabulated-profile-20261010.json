@@ -1,0 +1,600 @@
+{
+  "objective": "Independent review of experimental frozen/tabulated public panel caller, not scientific qualification",
+  "actual_probe_report": {
+    "state": "probe_completed_unqualified",
+    "source_panels": 864,
+    "receiver_point_rows": 4,
+    "actual_native_calls": 2,
+    "table_constructions": 1,
+    "systems": 0,
+    "qualified": false,
+    "full_point_affordability_established": false,
+    "gradient_error": 2.708988012210811e-09,
+    "unchanged_limit": 1.476549578233385e-08,
+    "reference_fd_vs_native_center_errors": [
+      2.529327376883661e-09,
+      2.529717689665756e-09
+    ],
+    "native_self_fd_errors_original": [
+      1.3783193570813743e-07,
+      1.3783258622944092e-07
+    ],
+    "preparation_wall_seconds": 112.59178620000603,
+    "micro_wall_seconds": 0.03858049999689683,
+    "probe_wall_seconds": 0.042752300010761246,
+    "table_constructor_wall_seconds": 110.62115019999328,
+    "raw_table_acquisition_wall_seconds": 0.10079399999813177,
+    "table_freezing_wall_seconds": 0.042068599999765866,
+    "table_serialization_wall_seconds": 0.05782440000621136
+  },
+  "actual_status": {
+    "state": "completed_probe_unqualified",
+    "new_green_evaluations": 2,
+    "numerical_systems": 0,
+    "table_construction_attempts": 1,
+    "intended_table_settings": {
+      "tabulation_nr": 1352,
+      "tabulation_nz": 744,
+      "tabulation_rmax": 100.0,
+      "tabulation_zmin": -251.0,
+      "tabulation_nb_integration_points": 1001,
+      "tabulation_grid_shape": "scaled_nemoh3",
+      "finite_depth_method": "newer",
+      "gf_singularities": "low_freq",
+      "floating_point_precision": "float64",
+      "finite_depth_prony_decomposition_method": "python",
+      "tabulation_cache_dir": null
+    },
+    "effective_constructor_threadpools": [
+      {
+        "user_api": "blas",
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "filepath": "C:\\ANYworkspaceWork\\anymarine-evidence\\runtime\\Lib\\site-packages\\numpy.libs\\libscipy_openblas64_-ed4f167a5330424524f45258e7ca2c8d.dll",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "SkylakeX"
+      },
+      {
+        "user_api": "blas",
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "filepath": "C:\\ANYworkspaceWork\\anymarine-evidence\\runtime\\Lib\\site-packages\\scipy.libs\\libscipy_openblas-197ee2fc9b4d071f7e048078cac74115.dll",
+        "version": "0.3.31.dev",
+        "threading_layer": "pthreads",
+        "architecture": "SkylakeX"
+      },
+      {
+        "user_api": "openmp",
+        "internal_api": "openmp",
+        "num_threads": 1,
+        "prefix": "libgomp",
+        "filepath": "C:\\ANYworkspaceWork\\anymarine-evidence\\runtime\\Lib\\site-packages\\capytaine.libs\\libgomp-1.dll",
+        "version": null
+      }
+    ],
+    "new_table_constructions": 1,
+    "table_constructor_wall_seconds": 110.62115019999328,
+    "raw_table_acquisition_wall_seconds": 0.10079399999813177,
+    "evaluator_preparation_wall_seconds": 111.17616279999493,
+    "table_freezing_wall_seconds": 0.042068599999765866,
+    "table_serialization_wall_seconds": 0.05782440000621136,
+    "effective_green_settings": {
+      "green_function": "FrozenGreen",
+      "tabulation_nr": 1352,
+      "tabulation_rmax": 100.0,
+      "tabulation_nz": 744,
+      "tabulation_zmin": -251.0,
+      "tabulation_nb_integration_points": 1001,
+      "tabulation_grid_shape": "scaled_nemoh3",
+      "finite_depth_method": "newer",
+      "finite_depth_prony_decomposition_method": "python",
+      "floating_point_precision": "float64",
+      "gf_singularities": "low_freq"
+    },
+    "preparation_wall_seconds": 112.59178620000603,
+    "effective_threadpools": [
+      {
+        "user_api": "blas",
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "filepath": "C:\\ANYworkspaceWork\\anymarine-evidence\\runtime\\Lib\\site-packages\\numpy.libs\\libscipy_openblas64_-ed4f167a5330424524f45258e7ca2c8d.dll",
+        "version": "0.3.34.106.0",
+        "threading_layer": "pthreads",
+        "architecture": "SkylakeX"
+      },
+      {
+        "user_api": "blas",
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "filepath": "C:\\ANYworkspaceWork\\anymarine-evidence\\runtime\\Lib\\site-packages\\scipy.libs\\libscipy_openblas-197ee2fc9b4d071f7e048078cac74115.dll",
+        "version": "0.3.31.dev",
+        "threading_layer": "pthreads",
+        "architecture": "SkylakeX"
+      },
+      {
+        "user_api": "openmp",
+        "internal_api": "openmp",
+        "num_threads": 1,
+        "prefix": "libgomp",
+        "filepath": "C:\\ANYworkspaceWork\\anymarine-evidence\\runtime\\Lib\\site-packages\\capytaine.libs\\libgomp-1.dll",
+        "version": null
+      }
+    ],
+    "micro_wall_seconds": 0.03858049999689683,
+    "probe_wall_seconds": 0.042752300010761246,
+    "probe_receiver_count": 4,
+    "probe_source_panel_count": 864
+  },
+  "source_check_log": "................................................                         [100%]\n48 passed in 4.86s\n",
+  "installed_check_log": "................................................                         [100%]\n48 passed in 4.85s\n",
+  "installed_identity": {
+    "wheel": "C:\\ANYworkspaceWork\\anymarine-evidence\\w5-tabulated-profile-20261010\\wheelhouse-review\\anyhydro-0.1.0-py3-none-any.whl",
+    "wheel_sha256": "b0346df5c125971d88aca29a2a3630185a0618cfcd4046f8f67e756f525447b1",
+    "source_wheel_install": {
+      "anyhydro/backends.py": "f00e4d4851c5bb95dfe2fe965de73f138f1c83c7e06b7d2dd1b413797a728ec4",
+      "anyhydro/capytaine_backend.py": "65687c94e529d21aa83bc7cfbed06b4a6a4629a9607a19f58bcb48b49e9c327c",
+      "anyhydro/dof.py": "af1d1a44f5167d2a6259e1110d60cac85d5e85e7ba0b005f1b60e9c74b84dd4e",
+      "anyhydro/errors.py": "90133e9308caa564e8f2bbd63190ea74c11fd7c5200341f606a76d5e0d926e04",
+      "anyhydro/excitation_series.py": "64d176b8f786777cfbef1c04dc334c62a893f9e1405143993ad844f0bf511208",
+      "anyhydro/excitation_source.py": "3cf3db011ad40be92dd62d6f43a2a3aeb50865c96e76f764e4f3d42a5b4b2355",
+      "anyhydro/first_slice.py": "4010ec0d2d21c3af66b577a047c02f5ec19a71440775664259d28eff6ed8a809",
+      "anyhydro/fixtures.py": "653a224ed69c452b1e6404bab2c86f21d8bbdff0df9514265250e9084f6e978b",
+      "anyhydro/frames.py": "15b47de1a53157819911355e2dcbef42138d28da7ad56870f2b06da027873f06",
+      "anyhydro/hams_backend.py": "a211869b2f98dc38e52a53e412c47ea2c616124d611bab016b957a77a3929de0",
+      "anyhydro/hams_fields.py": "2433dbe1b0e544369fc899eb78dacb5573ed4965de97a7eb7ddeb45c7c34f7b4",
+      "anyhydro/hams_field_points.py": "0575dd6c06083ada397136e78975491ed24e2adb771934aed095d9bdf20d2d3f",
+      "anyhydro/hams_import.py": "8955cd2077f5d6b64d82f28aaefe07ba05d76396023859fc0379302d1ae09e43",
+      "anyhydro/hams_inputs.py": "a00b83fa4443b93619730b2f163f521ff71e4274636bd01db6914244beb5a037",
+      "anyhydro/hams_producer.py": "7beadd4e5953d178aa85f9243a50ad913a6739ed88bf434c9dfcc523df4afa7c",
+      "anyhydro/hams_reference.py": "e7dc4e4feca556774fc65ad915e3e1d3b43a5b7285aa9a71be33811a986924d9",
+      "anyhydro/hashing.py": "5937a12e9360c22d31435075c7971a81dabc4e0d09366266bc9726754c90265f",
+      "anyhydro/hydrostatic_contract.py": "e1854d1a090de65a2fa82a04505aed479e9306194bdcd2e2c0c8122270e5073b",
+      "anyhydro/operators.py": "75c07b03e7777eb09054b903d1be8392e0ddcf0c42e8eb1d03c09f1cc81ba03c",
+      "anyhydro/panel_accuracy_reference.py": "4c1167bbc748bae79a429990394cbe22711968904c6fbd539b6dd2bfa849adba",
+      "anyhydro/panel_integration_candidate.py": "9d959903bb48a4ebe0efe4c63e4b366a5d24959e1e7c11d5ca0a939ae9e973c2",
+      "anyhydro/persistence.py": "beb6ca1cb9de1a200e9328a3ed4a99fd6943dac5b922dcb1e535d541d18bc74e",
+      "anyhydro/radiation.py": "774ac0bd650647904fa931dccdc432a906a824412ccc534e55e08b4480cc216d",
+      "anyhydro/records.py": "bb5ee0f2abbda01dc4778933937d62465ec12e2c8c93d076f7810e332aec8967",
+      "anyhydro/schema.py": "e80ab258cdc2f3d2e1f4815a1c4a12d244821706d8fc5bdbdbd87044c77c6eb2",
+      "anyhydro/source_study.py": "bcf394bac0b6ab0bb778832fb7add25d65b95964f08374fce1b483ab5618e604",
+      "anyhydro/source_study_case.py": "2e17551d4b266a65c8d6a2e662c2bf7254514cee8fa4f700363ccf3cf70ad4ed",
+      "anyhydro/surfaces.py": "d7f27da27e730d1c005ea34401d86f2772316f4b627c82b163b21071e6e02302",
+      "anyhydro/transform.py": "03ef06c38546ba3bece3c804c63b60f96df5a276a4a9eaa51af43565c265df19",
+      "anyhydro/wamit_import.py": "9ef8f4c6de05452ffc67d8e85aa5341d255a4fd690064e92e4393fb645a29866",
+      "anyhydro/wave_preview.py": "7b0afe601ea2e2ae7cdae27d28c128f8f72aabd3808d7584f98f4d7ffe461413",
+      "anyhydro/_linux_process_guard.py": "79d6892e9c28424648fa254638cedc25ca9c2461211bb2d924001ec5fabb4669",
+      "anyhydro/_owned_process.py": "3a76c441d09bfc0b136c4a5d24e6cecbf46714c728c144b8e5ee4ce001743e35",
+      "anyhydro/__init__.py": "8709fdad3f0ec3a38f207bb14fab7601b9652e9d74567497f693ddcd2fa1f891"
+    }
+  },
+  "native_launch_identity": {
+    "installed_modules": {
+      "anyhydro.panel_accuracy_reference": "C:\\ANYworkspaceWork\\anymarine-evidence\\runtime\\Lib\\site-packages\\anyhydro\\panel_accuracy_reference.py",
+      "anyhydro.panel_integration_candidate": "C:\\ANYworkspaceWork\\anymarine-evidence\\runtime\\Lib\\site-packages\\anyhydro\\panel_integration_candidate.py"
+    },
+    "manifest_sha256": "e84403ae4560a0680c8bca0b3cb2812192fb7c9b0df87849f0b4ac41a7303250",
+    "constructor_settings": {
+      "finite_depth_method": "newer",
+      "finite_depth_prony_decomposition_method": "python",
+      "floating_point_precision": "float64",
+      "gf_singularities": "low_freq",
+      "tabulation_cache_dir": null,
+      "tabulation_grid_shape": "scaled_nemoh3",
+      "tabulation_nb_integration_points": 1001,
+      "tabulation_nr": 1352,
+      "tabulation_nz": 744,
+      "tabulation_rmax": 100.0,
+      "tabulation_zmin": -251.0
+    },
+    "receivers": 4,
+    "source_panels": 864,
+    "max_table_constructions": 1,
+    "max_actual_native_calls": 2,
+    "one_thread": true,
+    "full_point_authorized": false
+  },
+  "actual_case": {
+    "case_hash": "a9857af547d1c06273f16cb9573ed61595712d7d1742a28a229d17ddd42fa330",
+    "version": "triangle-mean-neumann-pole-gauss2-v1",
+    "capytaine": "3.0.0",
+    "quadrature": "Gauss-Legendre 2",
+    "inventory": [
+      {
+        "body_id": "first-slice-a",
+        "role": "mesh",
+        "mesh_hash": "0f975d2e862b2e4912b54b6e92ef75272b1fb54cf0967195178c494c9c787a5a",
+        "source_geometry_refs": [
+          "first-slice-wetted-box-hull",
+          "first-slice-preparation-fixture-v1"
+        ]
+      },
+      {
+        "body_id": "first-slice-b",
+        "role": "mesh",
+        "mesh_hash": "3146d13b44408d14700672959ffd726ff9a155bd7a3e17cf8c99a6f667eb59b8",
+        "source_geometry_refs": [
+          "first-slice-wetted-box-hull",
+          "first-slice-preparation-fixture-v1"
+        ]
+      },
+      {
+        "body_id": "first-slice-a",
+        "role": "lid_mesh",
+        "mesh_hash": "06de2c86ae26d87fa6698103b96f2c194989667787f6743f278b34a5d7778f82",
+        "source_geometry_refs": [
+          "first-slice-wetted-box-lid",
+          "first-slice-preparation-fixture-v1"
+        ]
+      },
+      {
+        "body_id": "first-slice-b",
+        "role": "lid_mesh",
+        "mesh_hash": "dd73bb9a8d91b1e8e6780092c744db5b1dda9e14ecd2cd80de38522c6f8f96cd",
+        "source_geometry_refs": [
+          "first-slice-wetted-box-lid",
+          "first-slice-preparation-fixture-v1"
+        ]
+      }
+    ],
+    "body_ids": [
+      "first-slice-a",
+      "first-slice-b"
+    ],
+    "rotation_centers": [
+      [
+        -2.0,
+        0.0,
+        0.0
+      ],
+      [
+        2.0,
+        0.0,
+        0.0
+      ]
+    ],
+    "omega": 1.5,
+    "water_depth": 150.0,
+    "rho": 1025.0,
+    "gravity": 9.81,
+    "execution_limits": {
+      "max_total_panels": 864,
+      "max_finite_omegas": 1,
+      "max_wave_directions": 1,
+      "n_jobs": 1,
+      "n_threads": 1
+    },
+    "mean_neumann_testing": true,
+    "source_admission": false,
+    "module_sha256": "9d959903bb48a4ebe0efe4c63e4b366a5d24959e1e7c11d5ca0a939ae9e973c2",
+    "snapshot_arrays": {
+      "vertices": {
+        "shape": [
+          484,
+          3
+        ],
+        "dtype": "float64",
+        "sha256": "f3333cc5477c3f6c8996042e0625c31cc46ecca2976600d58a74b0a3cd7eca56"
+      },
+      "faces": {
+        "shape": [
+          864,
+          3
+        ],
+        "dtype": "int32",
+        "sha256": "f82d0f2092668b47e5b93fe5cd303fc98e0c7094b0580ac235a16156c80da4fb"
+      },
+      "owner": {
+        "shape": [
+          864
+        ],
+        "dtype": "int64",
+        "sha256": "f885e0468f831b23b26707242ad5002af690e4f648d7e447d6772769c7a52eda"
+      },
+      "hull_mask": {
+        "shape": [
+          864
+        ],
+        "dtype": "bool",
+        "sha256": "f334a49e12c147f99c3bcaa1825d8f3ab464357352ecbf3ffc219f73d84ba99e"
+      },
+      "points": {
+        "shape": [
+          864,
+          4,
+          3
+        ],
+        "dtype": "float64",
+        "sha256": "c1b1f2f8fdf4cebb3f37f2cc066a16526c7b1f7d5b1f41a6c16d3a98afd379d3"
+      },
+      "weights": {
+        "shape": [
+          864,
+          4
+        ],
+        "dtype": "float64",
+        "sha256": "73ba394c972d4f67bd5b91edcc89e8da547f62ac383719838a3e681abd42932a"
+      },
+      "normals": {
+        "shape": [
+          864,
+          3
+        ],
+        "dtype": "float64",
+        "sha256": "42407d95b2a0b01d483f8a886b31c328abcc6467d41436abb94719497b598ad8"
+      },
+      "rigid_trace": {
+        "shape": [
+          864,
+          4,
+          12
+        ],
+        "dtype": "float64",
+        "sha256": "c42ce22415da562fda73d5fefae0f20932d483bc4bf6d8adc80258b49bbe3074"
+      }
+    },
+    "accuracy_profile_sha256": "e84403ae4560a0680c8bca0b3cb2812192fb7c9b0df87849f0b4ac41a7303250",
+    "accuracy_implementation_sha256": "4c1167bbc748bae79a429990394cbe22711968904c6fbd539b6dd2bfa849adba",
+    "operator_probe_receivers": 4,
+    "planned_case_hash": "7dbdd550ca340aed66736584b62188029deab1e89b10c20898a9276ae9b5329b",
+    "actual_tabulation": {
+      "format": "anyhydro-panel-accuracy-finer-tabulation-v1",
+      "constructor_settings": {
+        "finite_depth_method": "newer",
+        "finite_depth_prony_decomposition_method": "python",
+        "floating_point_precision": "float64",
+        "gf_singularities": "low_freq",
+        "tabulation_cache_dir": null,
+        "tabulation_grid_shape": "scaled_nemoh3",
+        "tabulation_nb_integration_points": 1001,
+        "tabulation_nr": 1352,
+        "tabulation_nz": 744,
+        "tabulation_rmax": 100.0,
+        "tabulation_zmin": -251.0
+      },
+      "implementation_modules": {
+        "panel_accuracy_reference.py": "4c1167bbc748bae79a429990394cbe22711968904c6fbd539b6dd2bfa849adba",
+        "panel_integration_candidate.py": "9d959903bb48a4ebe0efe4c63e4b366a5d24959e1e7c11d5ca0a939ae9e973c2"
+      },
+      "planned_profile_sha256": "e84403ae4560a0680c8bca0b3cb2812192fb7c9b0df87849f0b4ac41a7303250",
+      "actual_tables": {
+        "tabulated_integrals": {
+          "dtype": "float64",
+          "sha256": "3661374303324bfee25059608549a99f22b5a34056f3b5de58b6b09efeb8caf9",
+          "shape": [
+            1352,
+            744,
+            5
+          ]
+        },
+        "tabulated_r_range": {
+          "dtype": "float64",
+          "sha256": "8b9141f4ae70adfb13ec0bd5cfaebd4655d37dca18690966557e8199752a69c5",
+          "shape": [
+            1352
+          ]
+        },
+        "tabulated_z_range": {
+          "dtype": "float64",
+          "sha256": "5bf5985245df3b299662a639989c99e7d4fdbda8bc6828f3e7d86497605464ee",
+          "shape": [
+            744
+          ]
+        }
+      },
+      "qualified": false
+    }
+  },
+  "guard": {
+    "method": "native-gradient-vs-declared-converged-reference-v1",
+    "error": 2.708988012210811e-09,
+    "limit": 1.476549578233385e-08,
+    "scale": 0.004765495782333849,
+    "passed": true,
+    "steps": [
+      0.001,
+      0.0005,
+      0.00025,
+      0.0001,
+      5e-05,
+      1e-05,
+      5e-06
+    ],
+    "reference_original_steps_passed": true,
+    "reference_fd_vs_native_center_errors": [
+      1.3219564456556226e-08,
+      4.363511629714573e-09,
+      2.300913734716581e-09,
+      2.49314321357913e-09,
+      2.520640749077707e-09,
+      2.529327376883661e-09,
+      2.529717689665756e-09
+    ],
+    "native_self_fd_errors": [
+      1.2618804976632925e-07,
+      1.3492204029366683e-07,
+      1.3710552979398494e-07,
+      1.377168823424313e-07,
+      1.378043449316857e-07,
+      1.3783193570813743e-07,
+      1.3783258622944092e-07
+    ],
+    "native_self_fd_passed": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "reference_fd_errors": [
+      1.1808077828891206e-08,
+      2.952025002049552e-09,
+      7.38005235915995e-10,
+      1.1807534724267432e-10,
+      2.9528555815783175e-11,
+      1.2655735834310455e-12,
+      3.197342564320582e-13
+    ],
+    "potential_error": 2.127976589077311e-09,
+    "empirical_reference_convergence": true,
+    "producer_attested": false,
+    "qualified": false
+  },
+  "tabulation_receipt": {
+    "format": "anyhydro-panel-accuracy-finer-tabulation-v1",
+    "constructor_settings": {
+      "finite_depth_method": "newer",
+      "finite_depth_prony_decomposition_method": "python",
+      "floating_point_precision": "float64",
+      "gf_singularities": "low_freq",
+      "tabulation_cache_dir": null,
+      "tabulation_grid_shape": "scaled_nemoh3",
+      "tabulation_nb_integration_points": 1001,
+      "tabulation_nr": 1352,
+      "tabulation_nz": 744,
+      "tabulation_rmax": 100.0,
+      "tabulation_zmin": -251.0
+    },
+    "implementation_modules": {
+      "panel_accuracy_reference.py": "4c1167bbc748bae79a429990394cbe22711968904c6fbd539b6dd2bfa849adba",
+      "panel_integration_candidate.py": "9d959903bb48a4ebe0efe4c63e4b366a5d24959e1e7c11d5ca0a939ae9e973c2"
+    },
+    "planned_profile_sha256": "e84403ae4560a0680c8bca0b3cb2812192fb7c9b0df87849f0b4ac41a7303250",
+    "actual_tables": {
+      "tabulated_integrals": {
+        "dtype": "float64",
+        "sha256": "3661374303324bfee25059608549a99f22b5a34056f3b5de58b6b09efeb8caf9",
+        "shape": [
+          1352,
+          744,
+          5
+        ]
+      },
+      "tabulated_r_range": {
+        "dtype": "float64",
+        "sha256": "8b9141f4ae70adfb13ec0bd5cfaebd4655d37dca18690966557e8199752a69c5",
+        "shape": [
+          1352
+        ]
+      },
+      "tabulated_z_range": {
+        "dtype": "float64",
+        "sha256": "5bf5985245df3b299662a639989c99e7d4fdbda8bc6828f3e7d86497605464ee",
+        "shape": [
+          744
+        ]
+      }
+    },
+    "qualified": false,
+    "archive_sha256": "3aab145ea76410468fc98f140467a340e2c15e56acd4c63a0f0f5f5d8dbe5640",
+    "constructor_wall_seconds": 110.62115019999328,
+    "freezing_wall_seconds": 0.042068599999765866
+  },
+  "source_derived_branches": {
+    "micro": {
+      "counts": {
+        "receiver_reflected_False_source_reflected_False": {
+          "table_predicate_rows": 172,
+          "asymptotic_predicate_rows": 0,
+          "radial_gradient_zero_limit_rows": 0,
+          "r_min": 0.08740274809062505,
+          "r_max": 0.10370463134501297,
+          "z_min": -0.26857798165137614,
+          "z_max": -0.2681192660550459
+        },
+        "receiver_reflected_False_source_reflected_True": {
+          "table_predicate_rows": 172,
+          "asymptotic_predicate_rows": 0,
+          "radial_gradient_zero_limit_rows": 0,
+          "r_min": 0.08740274809062505,
+          "r_max": 0.10370463134501297,
+          "z_min": -68.84655963302751,
+          "z_max": -68.84610091743119
+        },
+        "receiver_reflected_True_source_reflected_False": {
+          "table_predicate_rows": 172,
+          "asymptotic_predicate_rows": 0,
+          "radial_gradient_zero_limit_rows": 0,
+          "r_min": 0.08740274809062505,
+          "r_max": 0.10370463134501297,
+          "z_min": -68.76857798165138,
+          "z_max": -68.76811926605504
+        },
+        "receiver_reflected_True_source_reflected_True": {
+          "table_predicate_rows": 172,
+          "asymptotic_predicate_rows": 0,
+          "radial_gradient_zero_limit_rows": 0,
+          "r_min": 0.08740274809062505,
+          "r_max": 0.10370463134501297,
+          "z_min": -137.3465596330275,
+          "z_max": -137.34610091743116
+        }
+      },
+      "source_derived_predicates": true,
+      "instrumented_native_trace": false,
+      "rankine_and_prony_terms_are_not_table_lookups": true
+    },
+    "probe": {
+      "counts": {
+        "receiver_reflected_False_source_reflected_False": {
+          "table_predicate_rows": 13824,
+          "asymptotic_predicate_rows": 0,
+          "radial_gradient_zero_limit_rows": 8,
+          "r_min": 0.0,
+          "r_max": 1.153432031137001,
+          "z_min": -0.2293577981651376,
+          "z_max": -0.11553245792695949
+        },
+        "receiver_reflected_False_source_reflected_True": {
+          "table_predicate_rows": 13824,
+          "asymptotic_predicate_rows": 0,
+          "radial_gradient_zero_limit_rows": 8,
+          "r_min": 0.0,
+          "r_max": 1.153432031137001,
+          "z_min": -68.92116478977945,
+          "z_max": -68.80733944954127
+        },
+        "receiver_reflected_True_source_reflected_False": {
+          "table_predicate_rows": 13824,
+          "asymptotic_predicate_rows": 0,
+          "radial_gradient_zero_limit_rows": 8,
+          "r_min": 0.0,
+          "r_max": 1.153432031137001,
+          "z_min": -68.80733944954127,
+          "z_max": -68.6935141093031
+        },
+        "receiver_reflected_True_source_reflected_True": {
+          "table_predicate_rows": 13824,
+          "asymptotic_predicate_rows": 0,
+          "radial_gradient_zero_limit_rows": 8,
+          "r_min": 0.0,
+          "r_max": 1.153432031137001,
+          "z_min": -137.4991464411556,
+          "z_max": -137.38532110091742
+        }
+      },
+      "source_derived_predicates": true,
+      "instrumented_native_trace": false,
+      "rankine_and_prony_terms_are_not_table_lookups": true
+    }
+  },
+  "interpretation_limits": [
+    "Arrays are authoritative at the evidence path; this packet is a report/identity subset, not independent producer attestation.",
+    "Probe has four receiver point rows versus864sources, zero systems/radiation result. Full acquisition affordability unestablished.",
+    "No W5/source/residual/energy/PSD gate is qualified; native self-FD original-step failures remain recorded.",
+    "Astra contract/source reviews are historical assessment, not different-family independent acceptance. Current user requires Mistral.",
+    "No native reruns, table refinements, new oracle or source edits are authorized to the reviewer."
+  ],
+  "focused_check_scope": [
+    "tests/test_panel_accuracy_reference.py",
+    "tests/test_panel_integration_candidate.py"
+  ],
+  "independent_review": "w5-tabulated-mistral-review-20261010.md",
+  "integration_disposition": "w5-tabulated-mistral-disposition-20261010.md"
+}
