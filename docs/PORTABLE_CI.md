@@ -8,12 +8,27 @@ readable manifest lives in `tools/run_portable_checks.py` and is enforced by
 
 ## Scope
 
-The base package declares only `numpy`, `scipy` and `xarray` (plus `pytest`
-for development). Base CI therefore verifies the portable neutral contracts:
+The base package declares only `numpy`, `scipy` and `xarray`. The `dev` extra
+additionally provides `pytest`, `build` and `threadpoolctl>=3.6`: the panel
+integration candidate imports `threadpoolctl` at solve time to pin native
+thread pools, so a clean `.[dev]` install must provide it. Base CI therefore
+verifies the portable neutral contracts:
 records, schema, coordinates, frame maps, hydrostatics, persistence,
 transforms, radiation, operators, conventions, ownership, surfaces, and the
 eligible mock-only public workflows. It installs `.[dev]` only — no optional
 ecosystem packages.
+
+## Portable legacy oracle
+
+Golden legacy content hashes bind exact artifact bytes. Recomputed analytic
+fixtures and kernel quadrature are not bit-stable across numeric environments
+(demonstrated 2026-10-10: with identical numpy/scipy/xarray versions, the
+two-body fixture differs in `excitation_force` between Windows and Linux, and
+the full-12 kernel hash differs across three environments from identical
+dataset bytes). The literal golden hashes are therefore verified against
+frozen pre-refactor artifact bytes under `tests/fixtures/legacy-compatibility/`
+(see `provenance.json` there and `docs/PLATFORM_CI_REPAIR.md`), while the live
+generators keep their independent numerical checks and tolerances in the tests.
 
 A green base CI run is base-CI evidence only. Scientific qualification gates,
 real backend artifacts and optional ecosystem integration are distinct

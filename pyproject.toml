@@ -24,6 +24,7 @@ capytaine = ["capytaine>=3.0,<3.1"]
 dev = [
     "pytest>=7",
     "build>=1",
+    "threadpoolctl>=3.6",
 ]
 
 [tool.setuptools.packages.find]

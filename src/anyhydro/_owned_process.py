@@ -149,14 +149,38 @@ class _LinuxProcess:
         self._reaped=True
     def close(self):
         if self._closed:return
+        refusal=None
         if self._lifeline is not None:
+            # Capture a pending owned completion packet before revoking the
+            # lifeline; a producer that already ended keeps its exact status.
+            # A drain/protocol failure must not become successful completion:
+            # bounded cleanup still runs below, then the error is refused.
+            try:self._drain()
+            except (OSError,ValueError) as error:refusal=error
             import socket
             try:self._lifeline.shutdown(socket.SHUT_RDWR)
             except OSError:pass
             self._lifeline.close();self._lifeline=None
         self._finish_group()
+        if refusal is not None:
+            # A refused drain is terminal non-success even when a valid
+            # completion (including zero) was consumed first: a malformed
+            # or duplicate packet must never leave a success status behind.
+            self._code=125
+        elif self._code is None:
+            # close() reaps the owned parent above; record its return status
+            # before returning so a later poll() reports the effective owned
+            # result instead of None. Bounded: no additional waiting happens
+            # here. Guard exit is not producer exit: without a verified owned
+            # completion packet the status is terminal non-success, never
+            # the helper's own zero/unknown returncode.
+            helper_code=self._helper.returncode if self._helper is not None else None
+            self._code=(self._reported if self._reported is not None
+                else helper_code if isinstance(helper_code,int) and helper_code!=0
+                else 125)
         self._closed=True
         if self._pidfd is not None:os.close(self._pidfd);self._pidfd=None
+        if refusal is not None:raise refusal
 
 
 class _WindowsProcess:

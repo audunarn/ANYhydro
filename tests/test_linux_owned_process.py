@@ -232,6 +232,19 @@ class LinuxOwnedProcessTests(unittest.TestCase):
             self.processes.remove(p)
             if p._pidfd is not None:os.close(p._pidfd);p._pidfd=None
 
+    def test_close_refusal_after_valid_zero_packet_fails_closed(self):
+        # A drain that consumes a valid zero completion and then hits a
+        # malformed/duplicate packet must refuse: terminal status is 125,
+        # never the consumed zero, while bounded cleanup still completes.
+        p=self.create('0')
+        packets=[{'event':'exit','code':0},{'event':'exit','code':0}]
+        with patch.object(p,'_packet',side_effect=packets):
+            with self.assertRaisesRegex(OSError,'Invalid Linux native completion packet'):p.close()
+        self.assertIsNone(p._lifeline);self.assertTrue(p._reaped);self.assertIsNone(p._pidfd)
+        self.assertEqual(p.poll(),125)
+        p.close()
+        self.assertEqual(p.poll(),125)
+
     def test_completion_packet_arriving_after_eagain_is_drained(self):
         p=self.create('0')
         wait_for(lambda:os.waitid(os.P_PIDFD,p._pidfd,os.WEXITED|os.WNOHANG|os.WNOWAIT) is not None)

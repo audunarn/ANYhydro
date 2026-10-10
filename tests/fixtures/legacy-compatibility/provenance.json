@@ -1,0 +1,31 @@
+{
+  "purpose": "Portable legacy oracle: newly generated reference artifacts whose canonical content hashes equal the existing legacy goldens, frozen so the literal old golden content hashes are verified on identical immutable inputs on every platform. The original historical serialized file bytes were not recovered.",
+  "contract": "Legacy content hashing binds exact data bytes; recomputed analytic fixtures/kernel quadrature are not bit-stable across numeric environments (demonstrated: excitation_force differs Windows vs Linux with identical package versions; full12 kernel hash differs across three environments from identical dataset bytes).",
+  "golden_hashes": {
+    "two_body_fixture_legacy.nc": "2db117e6b2b19b5bf9278cb21410d3aff2e266cc33f14bbc2646e05cd6fd52b9",
+    "two_body_fixture_legacy_shifted.nc": "70813430e6343da3d67dda4ca8dc7c8d3a900e409ffb3c643502e015236c6022",
+    "full12_kernel_legacy.nc": "10bd41545ea153aa94cae508bcf1da3b7d0f3e2145553812de73060ccfc9091c"
+  },
+  "golden_provenance": {
+    "2db117e6b2b19b5bf9278cb21410d3aff2e266cc33f14bbc2646e05cd6fd52b9": "evidence run first-slice-prep-repair-01 (pre hashing-repair baseline); also BASELINE_FIXTURE_HASH in tests/test_coefficient_frames.py (hydro-frames-worker-01/check-01-baseline)",
+    "70813430e6343da3d67dda4ca8dc7c8d3a900e409ffb3c643502e015236c6022": "BASELINE_SHIFTED_HASH in tests/test_coefficient_frames.py (hydro-frames-worker-01/check-01-baseline)",
+    "10bd41545ea153aa94cae508bcf1da3b7d0f3e2145553812de73060ccfc9091c": "PRE_REFACTOR_FULL12_HASH in tests/test_derived_operators.py (captured pre-refactor full-12 bridge baseline)"
+  },
+  "generation_environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.9",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "xarray": "2026.9.0",
+    "anyhydro_source": "C:\\ANYworkspaceWork\\anymarine-evidence\\runtime\\Lib\\site-packages\\anyhydro\\__init__.py"
+  },
+  "generation_command": "run.py checks gen-legacy-fixtures-01 C:/Github/ANYhydro <runtime python> gen_legacy_fixtures.py (gui-ci-platform-repair-20261010)",
+  "observed_cross_environment_hashes": {
+    "two_body_fixture_windows": "2db117e6b2b19b5bf9278cb21410d3aff2e266cc33f14bbc2646e05cd6fd52b9",
+    "two_body_fixture_linux_ci": "cd9a6930124a247650b94a42efca3b38d44d2ec9d22b7576131b553f5862bf8d",
+    "full12_kernel_windows": "10bd41545ea153aa94cae508bcf1da3b7d0f3e2145553812de73060ccfc9091c",
+    "full12_kernel_linux_ci": "489d8e9e8abebedea18d40db556c072f138cc61147684467ce4ccce235f8cb2b",
+    "full12_kernel_linux_venv_py312": "325f11b4c988717eeef6ed34fbd0412fbecefdb150165ab0636b2aa3f1f1caa0",
+    "oracle12_dataset_hash_all_environments": "8375e93f817e417c6b88760cb6b1b5a6beea9c8a7486df5bf4100bc39b39ae10"
+  }
+}
