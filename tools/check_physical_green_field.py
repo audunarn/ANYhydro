@@ -125,6 +125,10 @@ NATIVE_QUADRATURE_METHOD = 'Gauss-Legendre 2'   # public QUADRATURE_METHOD
 CANONICAL_MESH_FACE = (0, 1, 2, 2)              # Capytaine triangle form
 K_SOLVE_MAX_ULP = 2.0                           # known bisection ULP gap
 TASK_NAME = 'w5-physical-green-discriminator-20261011'
+# Connected W5 follow-up scope (free-surface Robin defect repair): the
+# checker may write fresh evidence into EITHER the original task scope
+# or the connected repair scope; every other location stays refused.
+CONNECTED_TASK_NAME = 'w5-free-surface-repair-20261011'
 
 # ---- proposed gate tolerances (root adopts before actual execution) ----
 FAR_KR_TARGETS = (100.0, 200.0)
@@ -650,6 +654,41 @@ def evaluate_diagnostics(provider, source_points, source_weights, *, k,
                fd_steps=list(layout.fd_steps),
                far_kr_targets=list(far_kr_targets))
 
+    # ---- authoritative primitive arrays (independent replay basis) ----
+    # The derived metrics above are NOT sufficient for independent
+    # adjudication: the raw complex potential/gradient arrays of every
+    # retained component are saved with full component metadata.  The
+    # arrays are per (receiver, source panel) for the potential and
+    # (3, receiver, panel) for the gradient, exactly as validated above.
+    out['primitive_potential_native'] = {
+        'real': native_S.real.tolist(), 'imag': native_S.imag.tolist()}
+    out['primitive_gradient_native'] = {
+        'real': native_K.real.tolist(), 'imag': native_K.imag.tolist()}
+    out['primitive_potential_pole'] = {
+        'real': pole_S.real.tolist(), 'imag': pole_S.imag.tolist()}
+    out['primitive_gradient_pole'] = {
+        'real': pole_grad.real.tolist(), 'imag': pole_grad.imag.tolist()}
+    out['primitive_potential_composite'] = {
+        'real': S_comp.real.tolist(), 'imag': S_comp.imag.tolist()}
+    out['primitive_gradient_composite'] = {
+        'real': K_comp.real.tolist(), 'imag': K_comp.imag.tolist()}
+    out['primitive_metadata'] = dict(
+        dtype='float64',
+        potential_shape=[int(native_S.shape[0]), int(native_S.shape[1])],
+        gradient_shape=[3, int(native_S.shape[0]),
+                        int(native_S.shape[1])],
+        components=('native_raw', 'public_pole', 'composite'),
+        composite_assembly=('S_comp = native_S.real + 1j*pole_S; '
+                            'K_comp = native_K.real + 1j*pole_grad'),
+        robin_nu=robin_nu(k, water_depth),
+        surface_index=[int(j) for j in layout.surface_index],
+        bottom_index=[int(j) for j in layout.bottom_index],
+        interior_index=[int(j) for j in layout.interior_index],
+        far_index=[int(j) for j in layout.far_index],
+        note=('authoritative primitive complex arrays for independent '
+              'replay/adjudication; derived metrics are recomputable '
+              'from these arrays and the saved receivers/sources'))
+
     # ---- far-field comparison (total field, no amplitude/phase fit) ----
     far = list(layout.far_index)
     phi_far, _ = far_field_potential(layout.receivers[far], y, w, k=k,
@@ -829,7 +868,12 @@ def _task_evidence_scopes(repo_root=_REPO):
     """
     return (Path('C:/ANYworkspaceWork/anymarine-evidence') / TASK_NAME,
             Path('/mnt/c/ANYworkspaceWork/anymarine-evidence') / TASK_NAME,
-            Path(repo_root) / '.development-evidence' / TASK_NAME)
+            Path(repo_root) / '.development-evidence' / TASK_NAME,
+            Path('C:/ANYworkspaceWork/anymarine-evidence')
+            / CONNECTED_TASK_NAME,
+            Path('/mnt/c/ANYworkspaceWork/anymarine-evidence')
+            / CONNECTED_TASK_NAME,
+            Path(repo_root) / '.development-evidence' / CONNECTED_TASK_NAME)
 
 
 def _workspace_evidence_roots():
@@ -1484,6 +1528,38 @@ def main(argv=None):
         # uncertainty, the pre-call dump already saved the record)
         record['constructor_calls_attempted'] = True
         _dump(record, output)
+        # native core identity MEASURED before the constructor (the
+        # binding pins it; this is the fresh before/after measurement
+        # required for independent adjudication)
+        core_file = None
+        if core_sha is not None:
+            for _key in binding_record.get('evaluator', {}).get(
+                    'native_extension_sha256', {}):
+                if 'Delhommeau_float64' in _key:
+                    core_file = (Path(cpt.__file__).resolve().parent
+                                 / 'green_functions' / Path(_key).name)
+        if core_file is not None and core_file.is_file():
+            record['native_core_identity'] = dict(
+                pinned_sha256=core_sha,
+                file=core_file.name,
+                measured_before=sha256_file(core_file))
+        else:
+            record['native_core_identity'] = dict(
+                pinned_sha256=core_sha,
+                measured_before='unavailable (core file not found)')
+        # frozen Prony coefficients, read-only from the reference
+        # bundle; the identity is already enforced by the profile load
+        with np.load(reference / 'input.npz') as _ref_arrays:
+            _coeff = np.asarray(_ref_arrays['coefficients'], dtype=float)
+        record['frozen_prony_coefficients'] = dict(
+            shape=list(_coeff.shape),
+            sha256=hashlib.sha256(
+                np.ascontiguousarray(_coeff).tobytes()).hexdigest(),
+            values=_coeff.tolist(),
+            note=('read-only from the reference bundle input.npz; '
+                  'identity enforced by ArtifactBoundPanelProfile.load; '
+                  'no new fit, no relabeling'))
+        _dump(record, output)
         gf = profile.green_function(Delhommeau, cpt, k=k,
                                     water_depth=water_depth)
         record['constructor_calls_actual'] = 1
@@ -1537,6 +1613,14 @@ def main(argv=None):
                       'unmeasured (find_best_exponential_decomposition '
                       'is not observable on the constructed gf); the '
                       'planned count above is NOT an actual claim'))
+        # native core identity MEASURED after the evaluation
+        if isinstance(record.get('native_core_identity'), dict):
+            if core_file is not None and core_file.is_file():
+                record['native_core_identity']['measured_after'] = \
+                    sha256_file(core_file)
+            else:
+                record['native_core_identity']['measured_after'] = \
+                    'unavailable (core file not found)'
     except CapabilityError as exc:
         record['status'] = 'native_unavailable'
         record['reason'] = repr(exc)

@@ -627,6 +627,17 @@ def test_input_immutability_detection(tmp_path):
 # mock-positive actual-route regression; admitted ONLY via an explicit
 # envelope-table patch in that test (never by name/generic capability).
 MOCK_NEW_CORE_SHA = 'e1' + '0' * 62
+# mock frozen Prony decomposition mirroring the ACTUAL reference bundle
+# identity: the coefficients are a (2, 4) float64 lambda/amplitude array
+# (same frozen values as the free-surface component contracts).  The
+# mock profile itself is fully mocked; only the archive identity that
+# the checker reads read-only (reference/input.npz 'coefficients') is
+# mirrored so the fixture exercises the same code path as the actual
+# bundle.  The production profile load stays strict.
+MOCK_FROZEN_COEFFICIENTS = np.array([
+    [-5.7932255, -3.75742462, -1.887241, -1.70359223],
+    [0.68551454, -1.75302026, 1.9771878, 0.02662042]],
+    dtype=np.float64)
 
 
 def make_case_dir(tmp_path, case_hash=None, stale_identity=False,
@@ -675,7 +686,8 @@ def make_case_dir(tmp_path, case_hash=None, stale_identity=False,
     ref.mkdir()
     (ref / 'manifest.json').write_text(
         json.dumps({'k_hex': tool.FROZEN_K_HEX}), encoding='utf-8')
-    np.savez(ref / 'input.npz', dummy=np.zeros(3))
+    np.savez(ref / 'input.npz', dummy=np.zeros(3),
+             coefficients=MOCK_FROZEN_COEFFICIENTS)
     np.savez(ref / 'reference.npz', dummy=np.zeros(3))
     (d / 'binding').write_text(
         json.dumps({'format': 'mock-binding',
@@ -1116,6 +1128,78 @@ def test_cli_mock_native_positive_directory_reference(
     assert any('"status": "planned"' in line for line in printed)
     # trust scope is limited to the actual known case
     assert stored_case_hash(d) in record['trust_scope']
+    # frozen Prony coefficients: read-only from the reference bundle
+    # archive, mirroring the ACTUAL (2, 4) float64 identity
+    fc = record['frozen_prony_coefficients']
+    assert fc['shape'] == [2, 4]
+    np.testing.assert_array_equal(
+        np.asarray(fc['values'], dtype=float), MOCK_FROZEN_COEFFICIENTS)
+    assert fc['sha256'] == hashlib.sha256(
+        np.ascontiguousarray(MOCK_FROZEN_COEFFICIENTS).tobytes()
+    ).hexdigest()
+
+
+def test_cli_mock_native_primitive_persistence_replay(
+        tmp_path, mock_native_modules, capsys, monkeypatch):
+    """Authoritative primitive arrays: shape, components, replay.
+
+    The mock-positive record must persist the raw complex
+    potential/gradient primitives of all three retained components
+    (native_raw, public_pole, composite) with metadata, and the derived
+    surface-Robin residuals must be RECOMPUTABLE from the persisted
+    primitives alone (independent replay basis; the derived metrics
+    are not the only evidence).
+    """
+    monkeypatch.setitem(tool.E1_CORE_ENVELOPES, MOCK_NEW_CORE_SHA,
+                        tool.E1_ENVELOPE_AB_RECT)
+    d = make_case_dir(tmp_path)
+    out = tmp_path / 'mock-prim-result.json'
+    assert tool.main(cli_args(d, out, ['--allow-native-execution'])) == 0
+    record = json.loads(out.read_text(encoding='utf-8'))
+    assert record['status'] == 'completed_unqualified'
+    for label in ('hull', 'lid'):
+        diag = record['diagnostics'][label]
+        meta = diag['primitive_metadata']
+        assert meta['components'] == \
+            ['native_raw', 'public_pole', 'composite']
+        assert meta['potential_shape'] == [47, 1]
+        assert meta['gradient_shape'] == [3, 47, 1]
+        prim = {}
+        for comp in ('native', 'pole', 'composite'):
+            s = np.asarray(diag[f'primitive_potential_{comp}']['real']) \
+                + 1j * np.asarray(
+                    diag[f'primitive_potential_{comp}']['imag'])
+            g = np.asarray(diag[f'primitive_gradient_{comp}']['real']) \
+                + 1j * np.asarray(
+                    diag[f'primitive_gradient_{comp}']['imag'])
+            assert s.shape == tuple(meta['potential_shape'])
+            assert g.shape == tuple(meta['gradient_shape'])
+            assert np.isfinite(s).all() and np.isfinite(g).all()
+            prim[comp] = (s, g)
+        # recorded assembly convention: composite = native.real + 1j*pole
+        s_comp = prim['native'][0].real + 1j * prim['pole'][0]
+        g_comp = prim['native'][1].real + 1j * prim['pole'][1]
+        np.testing.assert_allclose(prim['composite'][0], s_comp,
+                                   rtol=0, atol=0)
+        np.testing.assert_allclose(prim['composite'][1], g_comp,
+                                   rtol=0, atol=0)
+        # derived surface-Robin residuals recomputed from primitives
+        # alone must reproduce the recorded derived metrics
+        S_tot = s_comp.sum(axis=1)
+        K_tot = g_comp.sum(axis=2)
+        nu = meta['robin_nu']
+        surf = meta['surface_index']
+        assert len(surf) == 2
+        rob = [abs(K_tot[2, j] - nu * S_tot[j]) for j in surf]
+        np.testing.assert_allclose(
+            rob, diag['composite_surface_robin_residual'],
+            rtol=1e-12, atol=0)
+        S_nat = prim['native'][0].astype(complex).sum(axis=1)
+        K_nat = prim['native'][1].astype(complex).sum(axis=2)
+        rob_nat = [abs(K_nat[2, j] - nu * S_nat[j]) for j in surf]
+        np.testing.assert_allclose(
+            rob_nat, diag['native_raw_surface_robin_residual'],
+            rtol=1e-12, atol=0)
 
 
 # ---- typed E1 domain preflight (BEFORE native constructor/evaluate) ----
