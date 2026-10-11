@@ -623,15 +623,26 @@ def test_input_immutability_detection(tmp_path):
 
 
 # ---- CLI ----------------------------------------------------------------
-def make_case_dir(tmp_path, case_hash=None, stale_identity=False):
+# mock NEW (rectangle-envelope) native float64 core identity for the
+# mock-positive actual-route regression; admitted ONLY via an explicit
+# envelope-table patch in that test (never by name/generic capability).
+MOCK_NEW_CORE_SHA = 'e1' + '0' * 62
+
+
+def make_case_dir(tmp_path, case_hash=None, stale_identity=False,
+                  core_sha=None):
     """Synthetic case with a CANONICALLY consistent case.json.
 
     The case hash is computed with the producer's convention (sorted-key
     compact JSON of the identity) and ``snapshot_arrays`` pins the
     input.npz arrays, exactly like the actual frozen case.  With
     ``stale_identity`` the stored hash is kept while a field is changed,
-    proving the canonical recompute catches tampering.
+    proving the canonical recompute catches tampering.  ``core_sha``
+    pins the binding's float64 native core identity (default: the mock
+    NEW rectangle-envelope core admitted by the mock-positive test).
     """
+    if core_sha is None:
+        core_sha = MOCK_NEW_CORE_SHA
     hull, lid = synthetic_source_triangles()
     vertices = np.vstack([hull, lid])
     faces = np.array([[0, 1, 2], [3, 4, 5]])
@@ -669,7 +680,12 @@ def make_case_dir(tmp_path, case_hash=None, stale_identity=False):
     (d / 'binding').write_text(
         json.dumps({'format': 'mock-binding',
                     'reference_manifest_sha256': '0' * 64,
-                    'evaluator': {'external_identity': 'mock'}}),
+                    'evaluator': {
+                        'external_identity': 'mock',
+                        'native_extension_sha256': {
+                            'capytaine/green_functions/'
+                            'Delhommeau_float64.cpython-312-'
+                            'x86_64-linux-gnu.so': core_sha}}}),
         encoding='utf-8')
     (d / 'sidecar').write_text('{}', encoding='utf-8')
     return d
@@ -719,8 +735,11 @@ def test_cli_plan_only(tmp_path, capsys):
     # input.npz verified against the case identity snapshot arrays
     assert set(record['input_array_hashes']) == \
         {'vertices', 'faces', 'points', 'weights'}
-    # ONE shared gf constructor for all source cases
-    assert record['constructor_calls_actual'] == 1
+    # planned vs actual constructor contract (root repair 2026-10-11):
+    # plan_only planned ONE shared gf constructor but OBSERVED none
+    assert record['constructor_calls_planned'] == 1
+    assert record['constructor_calls_actual'] == 0
+    assert 'constructor_calls_attempted' not in record
     assert record['plans']['hull']['constructor_calls'] == 1
     assert record['plans']['lid']['constructor_calls'] == 0
     assert set(record['plans']) == {'hull', 'lid'}
@@ -785,6 +804,11 @@ def test_cli_native_execution_not_authorized(tmp_path):
     record = json.loads(out.read_text(encoding='utf-8'))
     assert record['status'] == 'native_execution_not_authorized'
     assert record['qualification'] is False
+    # no authorization: the planned constructor was never attempted,
+    # so the OBSERVED actual count is 0 (not the old pre-set 1)
+    assert record['constructor_calls_planned'] == 1
+    assert record['constructor_calls_actual'] == 0
+    assert 'constructor_calls_attempted' not in record
     assert 'capytaine' not in sys.modules
 
 
@@ -1000,7 +1024,7 @@ def mock_native_modules(tmp_path):
 
 
 def test_cli_mock_native_positive_directory_reference(
-        tmp_path, mock_native_modules, capsys):
+        tmp_path, mock_native_modules, capsys, monkeypatch):
     """Mock-positive main: the actual route is exercised end to end.
 
     With the public capytaine modules and ArtifactBoundPanelProfile
@@ -1009,7 +1033,13 @@ def test_cli_mock_native_positive_directory_reference(
     47 receivers each, 376 source-quadrature interactions, canonical
     [[0, 1, 2, 2]] faces, the same Gauss-Legendre 2 weights, ONE
     shared constructor and an OBSERVED coefficient-override count.
+    The mock binding pins the mock NEW core identity, admitted ONLY by
+    an explicit envelope-table patch (A ∪ B ∪ rectangle); the typed
+    E1 domain preflight must PASS on all 1504 planned image arguments
+    BEFORE the native constructor.
     """
+    monkeypatch.setitem(tool.E1_CORE_ENVELOPES, MOCK_NEW_CORE_SHA,
+                        tool.E1_ENVELOPE_AB_RECT)
     d = make_case_dir(tmp_path)
     out = tmp_path / 'mock-result.json'
     code = tool.main(cli_args(d, out, ['--allow-native-execution']))
@@ -1017,14 +1047,27 @@ def test_cli_mock_native_positive_directory_reference(
     record = json.loads(out.read_text(encoding='utf-8'))
     assert record['status'] == 'completed_unqualified'
     assert record['qualification'] is False
+    # typed E1 domain preflight PASSED before the native constructor
+    pre = record['domain_preflight']
+    assert pre['status'] == 'checked'
+    assert pre['core_sha256'] == MOCK_NEW_CORE_SHA
+    assert pre['envelope'] == tool.E1_ENVELOPE_AB_RECT
+    assert pre['planned_args'] == 1504      # 2 cases x 47 x 4 nodes x 4
+    assert pre['unsupported'] == 0
+    assert pre['first_offender'] is None
+    assert pre['native_entry'] is False     # preflight itself: no native
     # the reference bundle was loaded as a DIRECTORY and fingerprinted
     assert len(MockProfile.load_calls) == 1
     assert Path(MockProfile.load_calls[0][0]).is_dir()
     assert set(record['reference_fingerprint']) == \
         {'manifest.json', 'input.npz', 'reference.npz'}
     assert record['reference_bundle']['format'] == 'mock-binding'
-    # exactly ONE shared gf constructor for both source cases
+    # exactly ONE shared gf constructor for both source cases:
+    # planned 1, and actual 1 only because the constructor was
+    # OBSERVED to complete (mocked completed caller)
+    assert record['constructor_calls_planned'] == 1
     assert record['constructor_calls_actual'] == 1
+    assert record['constructor_calls_attempted'] is True
     assert len(MockProfile.gfs) == 1
     gf = MockProfile.gfs[0]
     # gf.evaluate actually reached: 2 calls, 47 receivers each
@@ -1073,3 +1116,122 @@ def test_cli_mock_native_positive_directory_reference(
     assert any('"status": "planned"' in line for line in printed)
     # trust scope is limited to the actual known case
     assert stored_case_hash(d) in record['trust_scope']
+
+
+# ---- typed E1 domain preflight (BEFORE native constructor/evaluate) ----
+OLD_BOUNDED_CORE_SHA = ('6f05eb7534dd1d3fe0a0c3e067d050c4f5f218076'
+                        '1175201eb3cbd335d2ff891')
+
+
+def test_e1_classify_arg_envelopes():
+    legacy = 'legacy_A_union_B'
+    rect = tool.E1_ENVELOPE_AB_RECT
+    # case A / case B admitted by BOTH envelopes
+    assert tool.classify_e1_arg(5.0, -40.0, legacy) == 'A'
+    assert tool.classify_e1_arg(1.0, 0.25, legacy) == 'B'
+    # rectangle-only arguments: refused by the legacy envelope,
+    # admitted as 'RECT' only with the exact NEW core envelope
+    assert tool.classify_e1_arg(100.0, -1.7, legacy) is None
+    assert tool.classify_e1_arg(100.0, -1.7, rect) == 'RECT'
+    assert tool.classify_e1_arg(200.0, -137.0, rect) == 'RECT'
+    # outside the rectangle too
+    assert tool.classify_e1_arg(211.0, -1.0, rect) is None
+    assert tool.classify_e1_arg(100.0, -151.0, rect) is None
+    assert tool.classify_e1_arg(100.0, 0.5, rect) is None
+    # singular z = 0 and nonfinite arguments are always refused
+    assert tool.classify_e1_arg(1.0, 0.0, rect) is None
+    assert tool.classify_e1_arg(1.0, float('nan'), rect) is None
+    assert tool.classify_e1_arg(float('inf'), -1.0, rect) is None
+    # case B |z| <= 8 boundary is conservative over the angular arc
+    assert tool.classify_e1_arg(8.0, 0.5, legacy) is None
+    assert tool.classify_e1_arg(7.9, 0.5, legacy) == 'B'
+
+
+def test_e1_domain_preflight_unknown_core_typed_refusal():
+    ok, rep = tool.e1_domain_preflight(
+        tool.FROZEN_K, tool.FROZEN_WATER_DEPTH,
+        np.zeros((1, 3)), np.zeros((1, 3)), 'unknown-core-sha')
+    assert ok is False
+    assert rep['status'] == 'unknown_core'
+    assert 'unknown native core identity' in rep['reason']
+    assert OLD_BOUNDED_CORE_SHA in rep['supported_cores']
+
+
+def test_e1_domain_preflight_counts_bound_by_actual_arrays():
+    receivers = np.array([[100.0, 0.0, -1.0], [0.0, 0.0, -1.0]])
+    nodes = np.array([[0.0, 0.0, -0.1], [1.0, 0.0, -0.1],
+                      [0.0, 1.0, -0.1]])
+    # legacy envelope: the far receiver is unsupported
+    ok, rep = tool.e1_domain_preflight(
+        tool.FROZEN_K, tool.FROZEN_WATER_DEPTH, receivers, nodes,
+        OLD_BOUNDED_CORE_SHA)
+    assert rep['planned_args'] == 2 * 3 * 4      # all 4 images per pair
+    assert ok is False
+    assert rep['unsupported'] > 0
+    assert rep['first_offender']['receiver'] == [100.0, 0.0, -1.0]
+    # rectangle envelope (monkeypatched NEW core): everything supported
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setitem(tool.E1_CORE_ENVELOPES, 'newcore',
+                   tool.E1_ENVELOPE_AB_RECT)
+        ok2, rep2 = tool.e1_domain_preflight(
+            tool.FROZEN_K, tool.FROZEN_WATER_DEPTH, receivers, nodes,
+            'newcore')
+    assert ok2 is True
+    assert rep2['unsupported'] == 0
+    assert rep2['planned_args'] == 2 * 3 * 4
+
+
+def test_cli_old_core_domain_refused_before_native(
+        tmp_path, mock_native_modules, capsys):
+    """Exact OLD bounded core: typed domain_refused BEFORE the native
+    constructor/evaluate (no gf built, no evaluate call), with
+    unsupported counts and the first offender."""
+    d = make_case_dir(tmp_path, core_sha=OLD_BOUNDED_CORE_SHA)
+    out = tmp_path / 'old-core-result.json'
+    code = tool.main(cli_args(d, out, ['--allow-native-execution']))
+    assert code == tool.EXIT_DOMAIN_REFUSED
+    record = json.loads(out.read_text(encoding='utf-8'))
+    assert record['status'] == 'domain_refused'
+    assert record['qualification'] is False
+    pre = record['domain_preflight']
+    assert pre['core_sha256'] == OLD_BOUNDED_CORE_SHA
+    assert pre['envelope'] == 'legacy_A_union_B'
+    assert pre['planned_args'] == 1504
+    assert pre['unsupported'] > 0
+    assert pre['first_offender'] is not None
+    assert pre['first_offender']['case'] in ('hull', 'lid')
+    # NO native entry: the profile was loaded but no gf was constructed
+    assert len(MockProfile.load_calls) == 1
+    assert MockProfile.gfs == []
+    # planned vs actual constructor contract: domain refusal happens
+    # BEFORE the constructor, so actual is the OBSERVED 0
+    assert record['constructor_calls_planned'] == 1
+    assert record['constructor_calls_actual'] == 0
+    assert 'constructor_calls_attempted' not in record
+    # measured input/reference post-check on the typed refusal
+    assert record['inputs_immutable_post_check'] is True
+    assert record['input_fingerprint_after'] == \
+        record['input_fingerprint_before']
+    printed = capsys.readouterr().out.splitlines()
+    assert any('"status": "domain_refused"' in line for line in printed)
+
+
+def test_cli_unknown_core_typed_refusal(
+        tmp_path, mock_native_modules):
+    """UNKNOWN artifact core identity: typed refusal, no native entry."""
+    d = make_case_dir(tmp_path, core_sha='f' * 64)
+    out = tmp_path / 'unknown-core-result.json'
+    code = tool.main(cli_args(d, out, ['--allow-native-execution']))
+    assert code == tool.EXIT_DOMAIN_REFUSED
+    record = json.loads(out.read_text(encoding='utf-8'))
+    assert record['status'] == 'domain_refused'
+    pre = record['domain_preflight']
+    assert pre['status'] == 'unknown_core'
+    assert pre['core_sha256'] == 'f' * 64
+    assert MockProfile.gfs == []
+    # unknown core: typed refusal BEFORE the constructor; actual is
+    # the OBSERVED 0 and the input/reference post-check is measured
+    assert record['constructor_calls_planned'] == 1
+    assert record['constructor_calls_actual'] == 0
+    assert 'constructor_calls_attempted' not in record
+    assert record['inputs_immutable_post_check'] is True

@@ -411,3 +411,56 @@ passed / 0 failed under the metered development harness
 (`worker_repair` pool, attempt `finalize-pytest-01`, pytest wall
 0.58 s). Development fixtures do not confer scientific
 qualification; actual native execution remains root-only.
+
+## Typed E1 domain preflight (before any native entry)
+
+The actual route now runs a typed E1 domain preflight AFTER the
+`ArtifactBoundPanelProfile.load` (JSON only) and BEFORE the native
+constructor (`profile.green_function`) and any `gf.evaluate` call:
+
+- The binding's `evaluator.native_extension_sha256` float64 core
+  identity selects the tested envelope from an EXACT table
+  (`E1_CORE_ENVELOPES`): the old bounded artifact core
+  `6f05eb75...ff891` maps to the legacy union of case A
+  (Re(z) <= -30, |Im| <= 10) and case B (Re(z) > -0.5, |Im| <= 10,
+  0 < |z| <= 8); the w5-e1-domain-extension-20261011 candidate core is
+  admitted ONLY with its exact sha256 and ONLY after root adopts the
+  wheel build, the independent 408-point mpmath gate and the identity
+  evidence (union with the NEW rectangle Re(z) in [-150, 0],
+  |Im| <= 210, z /= 0). Root HAS adopted it (decision file
+  `.development-evidence/w5-e1-root-verification-20261011/
+  root-adoption.json`: 408 point values PASS, 14 typed refusals
+  PASS), so the exact experimental core
+  `6648b6c5eb71816244c03d0b27a21cb8b05dfcbb9d94ba7f42f7d32a6257fa4a`
+  is registered in `E1_CORE_ENVELOPES` as
+  `A_union_B_union_rect` for THIS discriminator ONLY -- no uniform
+  qualification and no general production admission. An UNKNOWN core
+  identity is a typed refusal
+  with NO native entry; admission is never by Green-function name or
+  generic backend capability.
+- The preflight classifies ALL FOUR image arguments per receiver and
+  per source Gauss node, bounded by the ACTUAL arrays (same convention
+  as the retained `native_accuracy_adapter.planned_args`):
+  `[k(xz+yz), k(-xz-2h+yz), k(xz-yz-2h), k(-xz-yz-4h)]` with
+  `r = k|x.xy - y.xy|`; the (r, z) check conservatively covers every
+  angular node `zeta = z + i r cos(theta)` of the unchanged 1001-node
+  rule (`|Im zeta| <= r`, `|zeta| <= hypot(r, |z|)`).
+- Any unsupported argument produces `status: domain_refused` with the
+  planned-argument count, the unsupported count and the first
+  offender, exit code 8, and NO native constructor or evaluate call
+  (the old bounded artifact therefore returns a typed refusal instead
+  of a fatal native ERRORSTOP on the actual physical case).
+- The preflight itself performs no native calls
+  (`native_entry: false` in the record); a passing preflight is a
+  DOMAIN admission only, never a physical validation.
+
+
+## Installed artifact and actual field result — 2026-10-11
+
+The offline isolated wheel (SHA256 `4efc4ea613a3ea6110a77a99dd2928e08bdf9c3edeba8f01b651f63663cbf4da`) and exact float64 core registered above have finite-sample installed verification: all408 registered values pass the unchanged independent-reference criterion;14 typed refusals pass through preserved split evidence. Earlier caller failures and their false gate remain unchanged. Owned wrapper code retains MPL-2.0; upstream Fortran retains Apache-2.0. This artifact is a private development candidate.
+
+Constructor counts distinguish planned1 from observed successful0/1. Planning, missing authorization and domain refusal report actual0; a saved attempt marker preserves crash uncertainty. Domain refusals measure input/reference hashes afterward. The56 focused tests pass on Windows and Linux. Root independently verified that all245 baseline Python files except the two intentionally changed tool/test files are unchanged, and the non-E1 native module suffix matches the previous candidate byte for byte.
+
+The root physical run used the new02 artifact binding,2actual provider calls (one47-receiver batch per hull/lid source),1observed successful constructor and2frozen-coefficient overrides. All1504 planned image arguments pass preflight; native primitive E1 counts remain unmeasured. Execution completed in4.18717440002365s with inputs/reference/core hashes preserved. Both sources pass interior Laplace, gradient consistency, seabed, far-leading and outgoing predicates. Both sources FAIL the free-surface Robin predicate: all four samples exceed `1e-9 + 1e-4*scale` by2.6666–3.1494 times. `completed_unqualified` reports execution, never a scientific pass. W5 NO_GO and general admission false remain unchanged.
+
+Evidence is stored at `C:/ANYworkspaceWork/anymarine-field-restart-20261011/physical-e1-01.json` and `C:/ANYworkspaceWork/anymarine-evidence/w5-e1-root-verification-20261011/root-assessment.json`; receipts, immutable split-point evidence and artifact inputs are in `.development-evidence/w5-e1-root-verification-20261011`. Next isolate the free-surface component residual before another large source solve. No causal claim about the full energy defect follows from these samples.

@@ -154,6 +154,7 @@ EXIT_GUARD_REFUSED = 4
 EXIT_NATIVE_UNAVAILABLE = 5
 EXIT_INPUT_MUTATED = 6
 EXIT_EVALUATION_FAILED = 7
+EXIT_DOMAIN_REFUSED = 8
 
 
 class NativeUnavailableError(CapabilityError):
@@ -162,6 +163,113 @@ class NativeUnavailableError(CapabilityError):
 
 class GuardRefused(CapabilityError):
     """Typed refusal: an output/input guard rejected the request."""
+
+
+# ---- typed E1 domain preflight (BEFORE native constructor/evaluate) -----
+# Envelope table keyed by the EXACT known native float64 core identity
+# (sha256 of capytaine/green_functions/Delhommeau_float64*.so as pinned
+# by the binding's evaluator.native_extension_sha256).  An UNKNOWN core
+# is a typed refusal with NO native entry; admission is never by
+# Green-function name or generic backend capability.
+E1_CORE_ENVELOPES = {
+    # old bounded artifact core (w5-native-accuracy / coupled-followup):
+    # legacy union of case A (Re(z) <= -30, |Im| <= 10) and case B
+    # (Re(z) > -0.5, |Im| <= 10, 0 < |z| <= 8) only.
+    '6f05eb7534dd1d3fe0a0c3e067d050c4f5f2180761175201eb3cbd335d2ff891':
+        'legacy_A_union_B',
+    # The w5-e1-domain-extension-20261011 candidate core (union with the
+    # NEW rectangle Re(z) in [-150, 0], |Im| <= 210, z /= 0) is admitted
+    # ONLY with its exact core sha256, and only after the wheel build,
+    # the independent 408-point mpmath gate and the identity evidence
+    # are adopted by root.  Root HAS adopted it (decision file
+    # .development-evidence/w5-e1-root-verification-20261011/
+    # root-adoption.json: 408 point values PASS, 14 typed refusals
+    # PASS): the exact experimental core below is registered for THIS
+    # discriminator ONLY -- no uniform qualification and no general
+    # production admission.
+    '6648b6c5eb71816244c03d0b27a21cb8b05dfcbb9d94ba7f42f7d32a6257fa4a':
+        'A_union_B_union_rect',
+}
+E1_ENV_A_RE_MAX = -30.0
+E1_ENV_ABS_IM_MAX = 10.0
+E1_ENV_B_RE_MIN = -0.5
+E1_ENV_B_ABS_Z_MAX = 8.0
+E1_RECT_RE_MIN = -150.0
+E1_RECT_RE_MAX = 0.0
+E1_RECT_ABS_IM_MAX = 210.0
+E1_ENVELOPE_AB_RECT = 'A_union_B_union_rect'
+
+
+def classify_e1_arg(r, z, envelope):
+    """Conservative (r, z)-level envelope check covering EVERY angular
+    quadrature node zeta = z + i*r*cos(theta) of the 1001-node rule:
+    |Im zeta| <= r and |zeta| <= hypot(r, |z|).  Returns 'A', 'B',
+    'RECT' or None (unsupported).  The legacy envelope admits A and B
+    only; the rectangle extension is admitted only for the exact NEW
+    core identity."""
+    if not (math.isfinite(r) and math.isfinite(z)):
+        return None
+    if z <= E1_ENV_A_RE_MAX and abs(r) <= E1_ENV_ABS_IM_MAX:
+        return 'A'
+    if (z > E1_ENV_B_RE_MIN and abs(r) <= E1_ENV_ABS_IM_MAX
+            and z != 0.0 and math.hypot(r, z) <= E1_ENV_B_ABS_Z_MAX):
+        return 'B'
+    if envelope == E1_ENVELOPE_AB_RECT:
+        if (E1_RECT_RE_MIN <= z <= E1_RECT_RE_MAX and z != 0.0
+                and abs(r) <= E1_RECT_ABS_IM_MAX):
+            return 'RECT'
+    return None
+
+
+def e1_image_args(k, water_depth, z_receiver, z_source):
+    """The four scaled image z-arguments of the finite-depth native
+    wave part for one receiver/source-Gauss pair (same convention as
+    the retained native_accuracy_adapter planned_args)."""
+    return (k * (z_receiver + z_source),
+            k * (-z_receiver - 2.0 * water_depth + z_source),
+            k * (z_receiver - z_source - 2.0 * water_depth),
+            k * (-z_receiver - z_source - 4.0 * water_depth))
+
+
+def e1_domain_preflight(k, water_depth, receivers, source_points, core_sha):
+    """Typed preflight over ALL four image arguments per receiver and
+    per source Gauss node, bounded by the ACTUAL arrays (no broad
+    by-Green-function-name admission).  Returns (ok, report); an
+    unknown core identity is a typed refusal (ok False, status
+    'unknown_core') with NO native entry."""
+    envelope = E1_CORE_ENVELOPES.get(core_sha)
+    if envelope is None:
+        return False, {'status': 'unknown_core',
+                       'core_sha256': core_sha,
+                       'reason': ('unknown native core identity: typed '
+                                  'refusal, no native entry'),
+                       'supported_cores': sorted(E1_CORE_ENVELOPES)}
+    pts = np.asarray(source_points, dtype=float).reshape(-1, 3)
+    recs = np.asarray(receivers, dtype=float)
+    total = 0
+    unsupported = 0
+    first = None
+    classes = set()
+    for m in recs:
+        for xi in pts:
+            r = k * math.sqrt(float(np.sum((m[:2] - xi[:2]) ** 2)))
+            for zm in e1_image_args(k, water_depth, float(m[2]),
+                                    float(xi[2])):
+                total += 1
+                cls = classify_e1_arg(r, zm, envelope)
+                if cls is None:
+                    unsupported += 1
+                    if first is None:
+                        first = {'r': r, 'z': zm,
+                                 'receiver': [float(v) for v in m],
+                                 'source_node': [float(v) for v in xi]}
+                else:
+                    classes.add(cls)
+    report = {'status': 'checked', 'core_sha256': core_sha,
+              'envelope': envelope, 'planned_args': total,
+              'unsupported': unsupported, 'classes': sorted(classes),
+              'first_offender': first}
+    return unsupported == 0, report
 
 
 # ---- physics helpers ----------------------------------------------------
@@ -647,6 +755,21 @@ def check_input_immutability(before, paths):
     """True iff every input hash is unchanged (fresh re-hash)."""
     after = input_fingerprint(paths)
     return all(after[str(p)] == v for p, v in before.items())
+
+
+def refusal_post_check(record, fingerprint_before, file_inputs,
+                       reference, reference_fingerprint):
+    """Measured input/reference immutability post-check on a typed
+    refusal (domain refusal happens BEFORE any native entry; the
+    post-check is a fresh measurement, never an unmeasured
+    no-mutation claim, and root can independently re-hash)."""
+    record['input_fingerprint_after'] = input_fingerprint(file_inputs)
+    immutable = check_input_immutability(fingerprint_before, file_inputs)
+    if reference_fingerprint is not None:
+        immutable = (immutable
+                     and fingerprint_reference_directory(reference)
+                     == reference_fingerprint)
+    record['inputs_immutable_post_check'] = bool(immutable)
 
 
 def fingerprint_reference_directory(reference_directory):
@@ -1207,7 +1330,23 @@ def main(argv=None):
         sources={label: sources[label] for label in labels},
         plans=plans,
         budget=preview_budget.as_dict(),
-        constructor_calls_actual=1,
+        # planned vs actual constructor contract (root repair
+        # 2026-10-11): planned is the single shared gf constructor the
+        # preview plans for the first source case; actual starts at 0
+        # and is ONLY incremented after an OBSERVED successful
+        # constructor.  plan_only / not-authorized / native-unavailable
+        # / domain-refused records therefore carry actual=0 (the old
+        # record pre-set actual=1 before any constructor existed).
+        constructor_calls_planned=1,
+        constructor_calls_actual=0,
+        constructor_calls_contract=(
+            'constructor_calls_planned is the planned shared gf '
+            'constructor; constructor_calls_actual counts only '
+            'OBSERVED successful constructors (0 for plan_only, '
+            'not-authorized, native-unavailable and domain-refused; '
+            '1 only after the constructor returned normally); '
+            'constructor_calls_attempted=True marks an attempt whose '
+            'outcome a hard crash could leave unobserved'),
         metadata=dict(runtime=_runtime_measurements(),
                       plan_only=bool(args.plan_only),
                       allow_native_execution=bool(
@@ -1270,8 +1409,84 @@ def main(argv=None):
                                    max_per_batch=args.receivers_per_batch)
         profile = ArtifactBoundPanelProfile.load(
             reference, binding, sidecar)
+        # ---- typed E1 domain preflight: BEFORE the native constructor --
+        # The exact float64 core identity pinned by the binding selects
+        # the tested envelope table; an unknown core is a typed refusal
+        # and the actual case arrays (all 4 images per receiver/source
+        # Gauss node) are classified WITHOUT any native entry, so the
+        # old bounded artifact returns domain_refused here instead of a
+        # fatal native ERRORSTOP.
+        core_ext = {key: value for key, value in binding_record.get(
+            'evaluator', {}).get('native_extension_sha256',
+                                 {}).items()
+            if 'Delhommeau_float64' in key}
+        core_sha = (list(core_ext.values())[0]
+                    if len(core_ext) == 1 else None)
+        preflight_total = 0
+        preflight_unsupported = 0
+        preflight_first = None
+        preflight_classes = set()
+        preflight_envelope = None
+        for label in labels:
+            ok, rep = e1_domain_preflight(
+                k, water_depth, layouts[label].receivers,
+                np.asarray(sources[label]['quad_points'], dtype=float),
+                core_sha)
+            if rep.get('status') == 'unknown_core':
+                record['status'] = 'domain_refused'
+                record['domain_preflight'] = rep
+                refusal_post_check(record, fingerprint_before,
+                                   file_inputs, reference,
+                                   reference_fingerprint)
+                _dump(record, output)
+                print(json.dumps({'status': 'domain_refused',
+                                  'reason': rep['reason'],
+                                  'core_sha256': core_sha,
+                                  'qualification': False}))
+                return EXIT_DOMAIN_REFUSED
+            preflight_total += rep['planned_args']
+            preflight_unsupported += rep['unsupported']
+            preflight_classes.update(rep['classes'])
+            preflight_envelope = rep['envelope']
+            if (preflight_first is None
+                    and rep['first_offender'] is not None):
+                preflight_first = dict(rep['first_offender'],
+                                       case=label)
+        record['domain_preflight'] = dict(
+            status='checked', core_sha256=core_sha,
+            envelope=preflight_envelope,
+            planned_args=preflight_total,
+            unsupported=preflight_unsupported,
+            classes=sorted(preflight_classes),
+            first_offender=preflight_first,
+            native_entry=False)
+        if preflight_unsupported:
+            record['status'] = 'domain_refused'
+            refusal_post_check(record, fingerprint_before,
+                               file_inputs, reference,
+                               reference_fingerprint)
+            _dump(record, output)
+            print(json.dumps({
+                'status': 'domain_refused',
+                'reason': (f'{preflight_unsupported} of '
+                           f'{preflight_total} planned image arguments '
+                           f'are outside the tested envelope of the '
+                           f'bound native core; typed refusal BEFORE '
+                           f'any native constructor/evaluate call'),
+                'planned_args': preflight_total,
+                'unsupported': preflight_unsupported,
+                'first_offender': preflight_first,
+                'qualification': False}))
+            return EXIT_DOMAIN_REFUSED
+        # constructor attempt begins: actual is incremented only after
+        # an OBSERVED successful constructor; a hard crash inside the
+        # constructor leaves attempted=True / actual=0 (honest
+        # uncertainty, the pre-call dump already saved the record)
+        record['constructor_calls_attempted'] = True
+        _dump(record, output)
         gf = profile.green_function(Delhommeau, cpt, k=k,
                                     water_depth=water_depth)
+        record['constructor_calls_actual'] = 1
         override_counter = install_coefficient_override_counter(gf)
         record['metadata']['gf'] = dict(
             green_function=type(gf).__name__,
