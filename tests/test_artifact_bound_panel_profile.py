@@ -2,7 +2,10 @@
 
 The fixture binding models the verified real fact: the corrected E1 evaluator
 differs from the original producer in ALL THREE backend source hashes, so the
-producer map can never serve as the evaluator map.
+producer map can never serve as the evaluator map. Native binding v2
+intentionally also admits unchanged Python maps (all exactly pinned) with a
+distinct pinned float64 library and guarded E1 interface; the real artifact
+exercises the changed-source path, so no real Python map equals the producer.
 """
 import json
 from pathlib import Path
@@ -418,6 +421,8 @@ def test_evaluator_case_metadata_records_both_identities(case):
     assert metadata['evaluator']['backend_source_sha256'] != metadata['producer']['backend']['source_sha256']
     assert metadata['qualified'] is False
     assert metadata['effective_settings']['floating_point_precision'] == 'float64'
+    assert metadata['producer']['role'] == 'original producer only, never the evaluator'
+    assert metadata['evaluator']['role'] == 'corrected artifact evaluator'
 
 
 def test_preserve_writes_binding_record(case, tmp_path):
@@ -444,6 +449,263 @@ def test_caller_admits_artifact_bound_profile_and_returns_terminal_probe(case, t
     assert metadata['format'] == ARTIFACT_BOUND_PANEL_PROFILE_FORMAT
     assert metadata['evaluator']['backend_source_sha256'] == case['evaluator_sources']
     assert metadata['producer']['backend']['source_sha256'] == case['manifest']['backend']['source_sha256']
+    assert metadata['qualified'] is False
+    assert metadata['producer']['role'] == 'original producer only, never the evaluator'
+    assert metadata['evaluator']['role'] == 'corrected artifact evaluator'
     assert (output/'artifact-binding.json').read_text() == profile.binding_json
     assert (output/'artifact-bound-micro-gate.json').is_file()
     assert not (output/'radiation.npz').exists()
+
+
+def native_binding(case):
+    from anyhydro.artifact_bound_panel_profile import NATIVE_FORMAT
+    evaluator = json.loads(json.dumps(case['binding']['evaluator']))
+    evaluator['backend_source_sha256'] = case['manifest']['backend']['source_sha256']
+    path = rebinding(case, format=NATIVE_FORMAT, evaluator=evaluator)
+    case['native'].write_bytes(case['f64_bytes'])
+    case['native32'].write_bytes(case['f32_bytes'])
+    core = case['green'].fortran_core
+    core.floating_point_precision = types.SimpleNamespace(pre=8)
+    core.delhommeau_integrals = types.SimpleNamespace(exp_e1_native=lambda z: (_ for _ in ()).throw(AssertionError('metadata must never execute E1')))
+    return path
+
+
+def test_native_binding_accepts_unchanged_python_sources_and_pins_evaluator(case):
+    path = native_binding(case)
+    profile = load(case, path)
+    gf = profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    from anyhydro.artifact_bound_panel_profile import NATIVE_FORMAT
+    metadata = profile.evaluator_case_metadata(gf)
+    assert metadata['format'] == NATIVE_FORMAT
+    assert metadata['producer']['backend'] == case['manifest']['backend']
+    assert metadata['qualified'] is False
+    assert metadata['evaluator']['backend_source_sha256'] == metadata['producer']['backend']['source_sha256']
+    assert gf.find_best_exponential_decomposition.__code__ is FIXED_COEFFICIENT_OVERRIDE_CODE
+
+
+def test_native_binding_refuses_original_native_library(case):
+    path = native_binding(case)
+    binding = json.loads(path.read_text())
+    key = next(k for k in binding['evaluator']['native_extension_sha256'] if 'float64' in k)
+    binding['evaluator']['native_extension_sha256'][key] = case['manifest']['backend']['native_library_sha256']
+    path.write_text(json.dumps(binding))
+    with pytest.raises(CapabilityError, match='distinct pinned float64'):load(case, path)
+
+
+@pytest.mark.parametrize('kind,entry', [(4, True), (8, False), (None, True)])
+def test_native_binding_refuses_wrong_precision_or_missing_interface_before_constructor(case, kind, entry):
+    path = native_binding(case)
+    core = case['green'].fortran_core
+    core.floating_point_precision.pre = kind
+    if not entry:core.delhommeau_integrals.exp_e1_native = None
+    profile = load(case, path)
+    before = case['green'].calls
+    with pytest.raises(CapabilityError, match='float64 guarded E1'):
+        profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert case['green'].calls == before
+
+
+def test_native_binding_rechecks_native_bytes(case):
+    profile = load(case, native_binding(case))
+    case['native'].write_bytes(b'mutated evaluator')
+    with pytest.raises(CapabilityError, match='float64 extension mismatch'):
+        profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+
+
+def test_native_binding_public_caller_preserves_version_and_unqualified_status(case, tmp_path):
+    from anyhydro.artifact_bound_panel_profile import NATIVE_FORMAT
+    profile = load(case, native_binding(case))
+    result = call(tmp_path/'native-v2', accuracy_profile=profile, operator_probe_receivers=4)
+    assert type(result).__name__ == 'PanelOperatorProbe'
+    output = tmp_path/'native-v2/candidate'
+    metadata = json.loads((output/'case.json').read_text())['artifact_evaluator']
+    assert metadata['format'] == NATIVE_FORMAT
+    assert metadata['qualified'] is False
+    assert metadata['producer']['role'] == 'original producer only, never the evaluator'
+    assert metadata['evaluator']['role'] == 'corrected artifact evaluator'
+    assert json.loads((output/'artifact-bound-micro-gate.json').read_text())['format'] == NATIVE_FORMAT
+    assert json.loads((output/'status.json').read_text())['state'] == 'completed_probe_unqualified'
+    assert not (output/'radiation.npz').exists()
+
+
+def test_native_binding_preserves_actual_version_in_profile_manifest(case):
+    from anyhydro.artifact_bound_panel_profile import NATIVE_FORMAT
+    profile = load(case, native_binding(case))
+    manifest = json.loads(profile.manifest_json)
+    assert manifest['format'] == NATIVE_FORMAT
+    assert manifest['artifact_binding']['format'] == NATIVE_FORMAT
+    assert json.loads(load(case).manifest_json)['format'] == ARTIFACT_BOUND_PANEL_PROFILE_FORMAT
+
+
+def test_native_binding_preserve_writes_versioned_manifest(case, tmp_path):
+    from anyhydro.artifact_bound_panel_profile import NATIVE_FORMAT
+    profile = load(case, native_binding(case))
+    directory = tmp_path/'kept-native';directory.mkdir()
+    profile.preserve(directory)
+    kept = json.loads((directory/'accuracy-profile.json').read_text())
+    assert kept['format'] == NATIVE_FORMAT
+    assert (directory/'artifact-binding.json').read_text() == profile.binding_json
+
+
+def test_native_binding_refuses_swapped_core_object_after_constructor(case, monkeypatch):
+    path = native_binding(case)
+    profile = load(case, path)
+    green = case['green']
+    original = green.__init__
+    def swapped(self, **kw):
+        original(self, **kw)
+        self.fortran_core = types.SimpleNamespace(__file__=str(case['native']))
+    monkeypatch.setattr(green, '__init__', swapped)
+    with pytest.raises(CapabilityError, match='exact imported float64 core'):
+        profile.green_function(green, sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert green.calls == 0
+
+
+@pytest.mark.parametrize('mutate', ['kind', 'interface'])
+def test_native_binding_rechecks_guarded_e1_after_constructor(case, monkeypatch, mutate):
+    path = native_binding(case)
+    profile = load(case, path)
+    green = case['green']
+    core = green.fortran_core
+    original = green.__init__
+    def degraded(self, **kw):
+        original(self, **kw)
+        if mutate == 'kind':
+            core.floating_point_precision = types.SimpleNamespace(pre=4)
+        else:
+            core.delhommeau_integrals = types.SimpleNamespace()
+    monkeypatch.setattr(green, '__init__', degraded)
+    with pytest.raises(CapabilityError, match='guarded E1 interface after construction'):
+        profile.green_function(green, sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert green.calls == 0
+
+
+def test_native_file_missing_is_typed_capability_error(case):
+    path = native_binding(case)
+    profile = load(case, path)
+    case['native'].unlink()
+    with pytest.raises(CapabilityError, match='native file missing or malformed'):
+        profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert case['green'].calls == 0
+
+
+def test_native_file_malformed_identity_is_typed_capability_error(case, monkeypatch):
+    path = native_binding(case)
+    profile = load(case, path)
+    monkeypatch.setattr(case['green'].fortran_core, '__file__', None)
+    with pytest.raises(CapabilityError, match='native file missing or malformed'):
+        profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert case['green'].calls == 0
+
+
+def test_float32_native_file_missing_is_typed_capability_error(case):
+    install_evaluator_backend(case)
+    profile = load(case)
+    case['native32'].unlink()
+    with pytest.raises(CapabilityError, match='native file missing or malformed'):
+        profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert case['green'].calls == 0
+
+
+def test_missing_fortran_core_after_constructor_is_typed_capability_error(case, monkeypatch):
+    install_evaluator_backend(case)
+    profile = load(case)
+    green = case['green']
+    original = green.__init__
+    def stripped(self, **kw):
+        original(self, **kw)
+        self.fortran_core = None
+    monkeypatch.setattr(green, '__init__', stripped)
+    with pytest.raises(CapabilityError, match='native file missing or malformed'):
+        profile.green_function(green, sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert green.calls == 0
+
+
+def test_native_extension_pathlike_identity_accepted(case, monkeypatch):
+    """A Path native file identity pins the same regular target bytes as str."""
+    path = native_binding(case)
+    profile = load(case, path)
+    monkeypatch.setattr(case['green'].fortran_core, '__file__', Path(case['native']))
+    gf = profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert gf.exportable_settings['gf_singularities'] == 'low_freq'
+    monkeypatch.setattr(case['green'].fortran_core, '__file__', str(case['native']))
+    gf = profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert gf.exportable_settings['gf_singularities'] == 'low_freq'
+
+
+def test_native_extension_pathlike_missing_is_typed_capability_error(case, monkeypatch):
+    """A Path identity without a regular file is still a typed refusal."""
+    path = native_binding(case)
+    profile = load(case, path)
+    monkeypatch.setattr(case['green'].fortran_core, '__file__', Path(case['native'].with_name('absent.mock')))
+    with pytest.raises(CapabilityError, match='native file missing or malformed'):
+        profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert case['green'].calls == 0
+
+
+def test_native_extension_symlink_target_followed_and_pinned(case):
+    """v1 compatibility: a valid symlink extension path pins its regular target bytes."""
+    path = native_binding(case)
+    profile = load(case, path)
+    real = case['native'].with_name('native-real.mock')
+    case['native'].rename(real)
+    try:
+        case['native'].symlink_to(real)
+    except OSError as exc:
+        pytest.skip(f'symlink creation unavailable on this platform: {exc}')
+    gf = profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert gf.exportable_settings['gf_singularities'] == 'low_freq'
+
+
+def test_native_extension_broken_symlink_is_typed_capability_error(case):
+    path = native_binding(case)
+    profile = load(case, path)
+    case['native'].unlink()
+    try:
+        case['native'].symlink_to(case['native'].with_name('missing-target.mock'))
+    except OSError as exc:
+        pytest.skip(f'symlink creation unavailable on this platform: {exc}')
+    with pytest.raises(CapabilityError, match='native file missing or malformed'):
+        profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert case['green'].calls == 0
+
+
+def test_native_file_directory_path_is_typed_capability_error(case, tmp_path, monkeypatch):
+    path = native_binding(case)
+    profile = load(case, path)
+    directory = tmp_path/'not-a-native-file';directory.mkdir()
+    monkeypatch.setattr(case['green'].fortran_core, '__file__', str(directory))
+    with pytest.raises(CapabilityError, match='native file missing or malformed'):
+        profile.green_function(case['green'], sys.modules['capytaine'], k=case['k'], water_depth=150.)
+    assert case['green'].calls == 0
+
+
+def rebuild_producer_native_case(case, tmp_path, mutate_backend):
+    """Rebuild the sealed bundle with a mutated producer native-library SHA."""
+    path = native_binding(case)
+    binding = json.loads(path.read_text())
+    manifest = json.loads(json.dumps(case['manifest']))
+    mutate_backend(manifest['backend'])
+    root = tmp_path/'bundle-producer-native';root.mkdir()
+    for name in ('input.npz', 'reference.npz'):
+        (root/name).write_bytes((case['root']/name).read_bytes())
+    seal(root, manifest)
+    binding['producer_backend'] = manifest['backend']
+    binding['reference_manifest_sha256'] = sha(canonical(manifest).encode())
+    binding_path = tmp_path/'artifact-binding-producer-native.json'
+    binding_path.write_text(json.dumps(binding))
+    return root, binding_path
+
+
+def test_missing_producer_native_sha_refused(case, tmp_path):
+    root, path = rebuild_producer_native_case(
+        case, tmp_path, lambda backend: backend.pop('native_library_sha256'))
+    with pytest.raises(CapabilityError, match='complete pinned backend identity'):
+        ArtifactBoundPanelProfile.load(root, path, case['sidecar_path'])
+
+
+def test_malformed_producer_native_sha_refused(case, tmp_path):
+    root, path = rebuild_producer_native_case(
+        case, tmp_path, lambda backend: backend.update(native_library_sha256='0'*63))
+    with pytest.raises(CapabilityError, match='invalid backend SHA256'):
+        ArtifactBoundPanelProfile.load(root, path, case['sidecar_path'])
