@@ -144,7 +144,7 @@ class TestBackendConstructor:
 
     def test_invalid_limits_rejected_at_construction(self):
         with pytest.raises(CapabilityError, match="ceiling"):
-            CapytaineBackend(execution_limits=CapytaineExecutionLimits(max_total_panels=2049))
+            CapytaineBackend(execution_limits=CapytaineExecutionLimits(max_total_panels=6145))
 
 
 # --------------------------------------------------------------------- #
