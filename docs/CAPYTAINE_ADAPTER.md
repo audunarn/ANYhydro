@@ -110,6 +110,14 @@ fixture/evidence metadata; dry physics is owned separately by the
 mechanical case contract. The fixture confers no scientific
 qualification.
 
+## Green function
+
+Solves use Capytaine's `Delhommeau` Green function with one change: the
+finite-depth remainder is decomposed by `anyhydro.prony_fit` (deterministic,
+accepted on a measured maximum pointwise error, refused otherwise) instead of
+Capytaine's default randomized fit with a mean-square tolerance. Adapter
+version 0.3.0 marks the change; see `docs/FINITE_DEPTH_PRONY.md`.
+
 ## Cache
 
 Optional content-addressed NetCDF cache (`cache_dir` constructor argument or
@@ -117,7 +125,7 @@ Optional content-addressed NetCDF cache (`cache_dir` constructor argument or
 hull and lid mesh hashes, body ids, rotation centers, centers of mass,
 enabled DOFs, the full request (frequencies, heading, water depth, rho,
 gravity, limit flags), the settings, the effective execution limits, the
-exact Capytaine version and the
+exact Capytaine version, the finite-depth Prony decomposition method and the
 adapter/schema versions — a cached entry can never be reused for changed
 input. Entries are written atomically and validated on load (schema
 validation plus exact identity and request-hash match); a corrupted or

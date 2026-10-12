@@ -55,6 +55,7 @@ from .errors import (
     UnsupportedOperationError,
 )
 from .persistence import load_hydro_dataset, save_hydro_dataset
+from .prony_fit import PRONY_FIT_FORMAT, validated_delhommeau
 from .records import HydroBody, HydroRequest
 from .schema import SCHEMA_VERSION, assemble_hydro_dataset
 
@@ -65,7 +66,7 @@ __all__ = [
     "SUPPORTED_SETTINGS",
 ]
 
-CAPYTAINE_ADAPTER_VERSION = "0.2.0"
+CAPYTAINE_ADAPTER_VERSION = "0.3.0"
 
 #: The only backend setting keys this adapter understands; unknown keys are
 #: refused instead of silently ignored.
@@ -448,6 +449,7 @@ class CapytaineBackend(HydrodynamicsBackend):
             "adapter_version": CAPYTAINE_ADAPTER_VERSION,
             "schema_version": SCHEMA_VERSION,
             "capytaine_version": cpt_version,
+            "finite_depth_prony_decomposition": PRONY_FIT_FORMAT,
             "settings": dict(settings),
             "execution_limits": self._limits.as_dict(),
             "request": {
@@ -773,7 +775,10 @@ class CapytaineBackend(HydrodynamicsBackend):
                 "g": float(request.gravity),
             }
         )
-        solver = cpt.BEMSolver()
+        # Finite depth: deterministic validated Prony decomposition instead of
+        # Capytaine's default (MSE < 1e-4 on a randomized grid admits
+        # pointwise remainder errors of 0.02-0.08; see anyhydro.prony_fit).
+        solver = cpt.BEMSolver(green_function=validated_delhommeau(cpt))
         method = settings.get("method")
         result = solver.fill_dataset(
             matrix,

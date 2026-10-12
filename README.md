@@ -226,6 +226,8 @@ qualification, and this slice carries no BEM execution authority. See
 - `docs/CONVENTIONS.md` — canonical conventions and invariants.
 - `docs/HYDRO_DATA_SCHEMA.md` — dataset schema, persistence format and hashing.
 - `docs/CAPYTAINE_ADAPTER.md` — Capytaine development adapter contract.
+- `docs/FINITE_DEPTH_PRONY.md` — validated finite-depth Prony decomposition
+  used by the adapter, and the W5 free-surface attribution behind it.
 - `docs/RADIATION_DEVELOPMENT.md` — radiation preprocessing development contract.
 - `docs/DERIVED_OPERATORS.md` — derived retained-DOF operator artifacts and
   retained-coordinate radiation (development slice).

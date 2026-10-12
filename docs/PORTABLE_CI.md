@@ -88,6 +88,12 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_submerged_lid | submerged lid policy (mocked solve) |
 | test_surfaces | thin-sheet surface semantics |
 | test_transform | coordinate transforms |
+| test_finite_depth_john_oracle | independent John-series finite-depth oracle; actual-record checks skip without local evidence |
+| test_physical_green_field | physical Green-field discriminator (mocked native route) |
+| test_prony_fit | validated finite-depth Prony decomposition; real-Capytaine checks skip without the extra |
+| test_retained_panel_energy_audit | retained panel energy audit tool |
+| test_retained_panel_pairs | retained panel-pair quadrature discriminator |
+| test_retained_weak_neumann | retained-field weak Neumann experiment (guarded) |
 
 ## Excluded modules and remaining gates
 
