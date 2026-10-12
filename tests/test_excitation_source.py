@@ -9,6 +9,7 @@ import pytest
 
 from anyhydro import (EXCITATION_SOURCE_ATTR, CURRENT_POLICY, ExcitationSourceError,
     attach_excitation_source, verify_excitation_source, request_to_dict,
+    verify_excitation_source_declaration,
     request_from_dict, build_source_bound_excitation_series,
     dataset_content_hash, save_hydro_dataset, load_hydro_dataset)
 from anyhydro.fixtures import make_two_body_fixture, make_fixture_request, make_fixture_bodies
@@ -192,3 +193,23 @@ def test_ordered_source_inventory_has_distinct_cache_identity(tmp_path,monkeypat
         if order in hashes:assert dataset_content_hash(ds)==hashes[order]
         hashes[order]=dataset_content_hash(ds)
     assert len(calls)==2 and len(list(tmp_path.glob('*.nc')))==2
+
+
+def test_declaration_verifier_without_caller_request():
+    raw,ds,r,b=source()
+    contract,restored=verify_excitation_source_declaration(ds)
+    assert restored.content_hash()==r.content_hash() and contract['request']==request_to_dict(r)
+    with pytest.raises(ExcitationSourceError):verify_excitation_source_declaration(raw)
+    changed=ds.copy(deep=True);changed.excitation_force.values[0,0,0]+=1j
+    with pytest.raises(ExcitationSourceError,match='stale'):verify_excitation_source_declaration(changed)
+    for key,value in (('version','unknown'),('convention_evidence',' ')):
+        c=json.loads(ds.attrs[EXCITATION_SOURCE_ATTR]);c[key]=value
+        changed=ds.copy(deep=True);changed.attrs[EXCITATION_SOURCE_ATTR]=json.dumps(c)
+        with pytest.raises(ExcitationSourceError):verify_excitation_source_declaration(changed)
+    c=json.loads(ds.attrs[EXCITATION_SOURCE_ATTR]);c['conventions']['phase_origin_xy_m']=[1.,0.]
+    changed=ds.copy(deep=True);changed.attrs[EXCITATION_SOURCE_ATTR]=json.dumps(c)
+    with pytest.raises(ExcitationSourceError,match='convention'):verify_excitation_source_declaration(changed)
+    c=json.loads(ds.attrs[EXCITATION_SOURCE_ATTR]);c['request']['water_depth']+=1.
+    changed=ds.copy(deep=True);changed.attrs[EXCITATION_SOURCE_ATTR]=json.dumps(c)
+    with pytest.raises(ExcitationSourceError,match='request hash'):verify_excitation_source_declaration(changed)
+    with pytest.raises(ExcitationSourceError,match='request'):verify_excitation_source(changed,r,b)

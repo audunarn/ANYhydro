@@ -366,12 +366,12 @@ from .excitation_source import (
     EXCITATION_SOURCE_ATTR, EXCITATION_SOURCE_VERSION, CURRENT_POLICY,
     ExcitationSourceError, request_to_dict, request_from_dict,
     attach_excitation_source, verify_excitation_source,
-    build_source_bound_excitation_series,
+    verify_excitation_source_declaration, build_source_bound_excitation_series,
 )
 __all__ += ["EXCITATION_SOURCE_ATTR", "EXCITATION_SOURCE_VERSION", "CURRENT_POLICY",
             "ExcitationSourceError", "request_to_dict", "request_from_dict",
             "attach_excitation_source", "verify_excitation_source",
-            "build_source_bound_excitation_series"]
+            "verify_excitation_source_declaration", "build_source_bound_excitation_series"]
 
 from .surfaces import (SurfaceSemantics, PlateDragCorrection, SURFACE_SCHEMA,
     SURFACE_IDENTITY_ATTR, SHEET_SOURCE_ATTR, migrate_surface_role, sheet_pressure_load, surface_identity)

@@ -138,29 +138,52 @@ def attach_excitation_source(dataset, request, bodies, *, convention_evidence):
     return result
 
 
+def verify_excitation_source_declaration(dataset):
+    """Verify a stored declaration's own identity without a caller request.
+
+    Checks the exact fields, version, conventions, binding exclusions,
+    backend identity, an explicit restorable request and the dataset binding
+    hash. Unlike :func:`verify_excitation_source` it does not compare a
+    caller's request/body inventory. Returns ``(contract, HydroRequest)``;
+    no scientific admission is performed.
+    """
+    try:
+        return _verify_declaration(dataset)
+    except (TypeError, ValueError, KeyError, HydroError, OverflowError) as error:
+        raise ExcitationSourceError(f'excitation source verification failed: {error}') from error
+
+
+def _verify_declaration(dataset):
+    raw = dataset.attrs.get(EXCITATION_SOURCE_ATTR)
+    if not isinstance(raw, (str, Mapping)):
+        raise ValueError('saved source declaration required')
+    contract = json.loads(raw) if isinstance(raw, str) else json.loads(_json(raw))
+    if not isinstance(contract, dict) or set(contract) != {'version', 'dataset_binding_hash', 'binding_excludes', 'request', 'conventions', 'backend', 'convention_evidence'}:
+        raise ValueError('exact source declaration fields required')
+    if contract['binding_excludes'] != list(_BINDING_EXCLUDES):
+        raise ValueError('unsupported source binding exclusions')
+    if contract['version'] != EXCITATION_SOURCE_VERSION or _json(contract['conventions']) != _json(_CONVENTIONS):
+        raise ValueError('unsupported source convention/version')
+    if not isinstance(contract['convention_evidence'], str) or not contract['convention_evidence'].strip():
+        raise ValueError('convention evidence required')
+    if contract['backend'] != {k: dataset.attrs[k] for k in ('backend', 'backend_version')}:
+        raise ValueError('backend identity mismatch')
+    restored = request_from_dict(contract['request'])
+    # The declared request must be the dataset's own (request_hash is bound).
+    if restored.content_hash() != dataset.attrs.get('request_hash'):
+        raise ValueError('declared source request does not match the dataset request hash')
+    if contract['dataset_binding_hash'] != dataset_content_hash(dataset, exclude_attrs=_BINDING_EXCLUDES):
+        raise ValueError('stale source dataset binding')
+    return contract, restored
+
+
 def verify_excitation_source(dataset, request, bodies):
     """Verify transport/identity only; does not perform scientific admission."""
     try:
         _verify_inventory(dataset, request, bodies)
-        raw = dataset.attrs.get(EXCITATION_SOURCE_ATTR)
-        if not isinstance(raw, (str, Mapping)):
-            raise ValueError('saved source declaration required')
-        contract = json.loads(raw) if isinstance(raw, str) else json.loads(_json(raw))
-        if not isinstance(contract, dict) or set(contract) != {'version', 'dataset_binding_hash', 'binding_excludes', 'request', 'conventions', 'backend', 'convention_evidence'}:
-            raise ValueError('exact source declaration fields required')
-        if contract['binding_excludes'] != list(_BINDING_EXCLUDES):
-            raise ValueError('unsupported source binding exclusions')
-        if contract['version'] != EXCITATION_SOURCE_VERSION or _json(contract['conventions']) != _json(_CONVENTIONS):
-            raise ValueError('unsupported source convention/version')
-        if not isinstance(contract['convention_evidence'], str) or not contract['convention_evidence'].strip():
-            raise ValueError('convention evidence required')
-        if contract['backend'] != {k: dataset.attrs[k] for k in ('backend', 'backend_version')}:
-            raise ValueError('backend identity mismatch')
-        restored = request_from_dict(contract['request'])
+        contract, restored = _verify_declaration(dataset)
         if restored.content_hash() != request.content_hash():
             raise ValueError('saved source request mismatch')
-        if contract['dataset_binding_hash'] != dataset_content_hash(dataset, exclude_attrs=_BINDING_EXCLUDES):
-            raise ValueError('stale source dataset binding')
         return contract
     except (TypeError, ValueError, KeyError, HydroError, OverflowError) as error:
         raise ExcitationSourceError(f'excitation source verification failed: {error}') from error
