@@ -40,6 +40,13 @@ frequency added-mass limit. If present it must carry a non-empty `source`
 attribute recording its provenance (backend limit solve or explicitly
 validated extraction, with source identity and generation settings).
 
+`radiation_damping_far_field(omega, influenced_dof, radiating_dof)` float64:
+far-field (Kochin energy-flux) radiation damping, symmetric positive
+semidefinite per frequency by construction. It requires a non-empty `source`
+attribute. The Capytaine adapter (>= 0.5.0, indirect method) computes it from
+the Kochin functions of the same radiation solves as
+`B_ij = (4 pi rho k/(omega D)) Re int H_i^* H_j dtheta`.
+
 Time-domain admission requires `added_mass_infinite`. A frequency-only
 dataset is valid but is rejected by `validate_for_time_domain`; the last
 finite-frequency sample is never silently substituted.

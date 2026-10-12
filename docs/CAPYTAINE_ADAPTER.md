@@ -121,6 +121,12 @@ the propagating mode, is evaluated analytically instead of from Capytaine's
 tabulation, whose small indefinite error produced negative radiation-damping
 eigenvalues. Adapter version 0.4.0 marks both; see `docs/FINITE_DEPTH_PRONY.md`.
 
+From adapter 0.5.0 the indirect method also returns `radiation_damping_far_field`:
+the request grid carries a uniform heading coordinate (at least 720 headings,
+more when 4 k R exceeds that for the largest wavenumber and horizontal radius R),
+so Capytaine keeps the source strengths and evaluates the radiation Kochin
+functions from the same solves. The direct method returns no far-field damping.
+
 ## Cache
 
 Optional content-addressed NetCDF cache (`cache_dir` constructor argument or

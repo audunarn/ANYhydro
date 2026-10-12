@@ -18,7 +18,15 @@ Conventions (docs/FIRST_SLICE_OPERATOR_CONTRACT.md, adopted 2026-10-08):
   ``Q^T q = Q_hat^T q_hat`` is preserved.
 - The correction policy is explicit: ``"none"`` keeps the raw retained
   operators; ``"reciprocal_average"`` replaces A, B and A_inf by
-  ``(X + X^T)/2`` only. Hydrostatics and excitation are never modified,
+  ``(X + X^T)/2`` only; ``"reciprocal_average_far_field_weak_modes"`` does
+  the same and then, per frequency in normalized coordinates, replaces the
+  symmetric damping on its weak subspace (eigenvalues below
+  ``WEAK_MODE_FRACTION`` times the largest) by the far-field (Kochin
+  energy-flux) damping compressed onto that subspace. The
+  far-field damping is positive semidefinite by construction; the weak
+  modes are those the pressure-integrated damping cannot resolve (W5
+  evidence w5-physical-20261012). Energetic modes, A and A_inf are the
+  reciprocal average. Hydrostatics and excitation are never modified,
   nothing is clamped, tuned or fitted, and there is no default policy.
 - Admission criteria are caller-declared, finite and nonnegative; there
   are no scientific defaults. Failed criteria retain the artifact and
@@ -79,7 +87,14 @@ RAW_FULL_DIAGNOSTIC_COORDINATES = "unscaled_mixed_si_informational"
 
 CORRECTION_NONE = "none"
 CORRECTION_RECIPROCAL_AVERAGE = "reciprocal_average"
-CORRECTION_POLICIES = (CORRECTION_NONE, CORRECTION_RECIPROCAL_AVERAGE)
+CORRECTION_FAR_FIELD_WEAK_MODES = "reciprocal_average_far_field_weak_modes"
+CORRECTION_POLICIES = (CORRECTION_NONE, CORRECTION_RECIPROCAL_AVERAGE,
+                       CORRECTION_FAR_FIELD_WEAK_MODES)
+#: Policies that consume the dataset's ``radiation_damping_far_field``.
+FAR_FIELD_POLICIES = (CORRECTION_FAR_FIELD_WEAK_MODES,)
+#: Weak damping modes: eigenvalue below this fraction of the largest, in the
+#: declared normalized coordinates (same threshold as the adopted W5 criteria).
+WEAK_MODE_FRACTION = 1e-3
 
 #: Report sections per operator matrix (order is part of the artifact hash).
 REPORT_MATRIX_KEYS = ("added_mass", "damping", "added_mass_infinite")
@@ -642,6 +657,41 @@ def _apply_policy(policy: str, X: np.ndarray) -> np.ndarray:
     raise DerivedOperatorSettingsError(f"unknown correction policy {policy!r}")
 
 
+def _derive_damping(policy: str, raw_B: np.ndarray, raw_B_far: Optional[np.ndarray],
+                    scales: np.ndarray) -> np.ndarray:
+    """Derived retained damping (omega-leading) under ``policy``.
+
+    For the far-field weak-mode policy, per frequency in normalized
+    coordinates ``B_hat = S B S``: eigendecompose the reciprocal average and
+    replace its block on the weak subspace (eigenvalues below
+    ``WEAK_MODE_FRACTION`` times the largest, orthonormal basis ``V_w``) by
+    the far-field damping compressed onto it,
+    ``B_hat + V_w (V_w^T F_hat V_w - Lambda_w) V_w^T`` with
+    ``F_hat = S B_far S``. If no eigenvalue is positive, every mode is weak.
+    The result is symmetrized exactly and mapped back to SI coordinates.
+    """
+    if policy not in FAR_FIELD_POLICIES:
+        return _apply_policy(policy, raw_B)
+    _require(raw_B_far is not None,
+             DerivedOperatorError(f"policy {policy!r} requires far-field damping"))
+    sym = _apply_policy(CORRECTION_RECIPROCAL_AVERAGE, raw_B)
+    s = np.asarray(scales, dtype=np.float64)
+    outer = s[:, None] * s[None, :]
+    out = np.empty_like(sym)
+    for o in range(sym.shape[0]):
+        Bh = sym[o] * outer
+        Fh = 0.5 * (raw_B_far[o] + raw_B_far[o].T) * outer
+        lam, V = np.linalg.eigh(Bh)
+        weak = lam < WEAK_MODE_FRACTION * lam[-1] if lam[-1] > 0.0 else np.ones_like(lam, dtype=bool)
+        Vw = V[:, weak]
+        # weak subspace takes the far-field damping compressed onto it:
+        # basis-independent (repeated weak eigenvalues) and PSD on that subspace
+        new = Bh + Vw @ (Vw.T @ Fh @ Vw - np.diag(lam[weak])) @ Vw.T
+        new = 0.5 * (new + new.T)
+        out[o] = new / outer
+    return out
+
+
 @dataclass(frozen=True)
 class DerivedOperatorReport:
     """Complete criteria results: residuals, thresholds, passes, modes.
@@ -932,6 +982,8 @@ class DerivedHydroOperators:
     excitation_force: np.ndarray
     report: DerivedOperatorReport
     provenance: Mapping[str, Any]
+    #: retained far-field damping (SI), present iff the policy consumes it
+    raw_damping_far_field: Optional[np.ndarray] = None
 
     def __post_init__(self) -> None:
         _require(isinstance(self.settings, DerivedOperatorSettings),
@@ -1021,12 +1073,34 @@ class DerivedHydroOperators:
 
         # invariant: derived arrays are exactly the policy applied to raw
         policy = self.settings.correction_policy
+        if policy in FAR_FIELD_POLICIES:
+            _require(self.raw_damping_far_field is not None,
+                     DerivedOperatorError(
+                         f"policy {policy!r} requires raw_damping_far_field"))
+            far = _frozen_float_array(self.raw_damping_far_field,
+                                      "raw_damping_far_field", ndim=3)
+            _require(far.shape == (n_w, n_ret, n_ret),
+                     DerivedOperatorError(
+                         f"raw_damping_far_field must have shape {(n_w, n_ret, n_ret)}"))
+            object.__setattr__(self, "raw_damping_far_field", far)
+        else:
+            _require(self.raw_damping_far_field is None,
+                     DerivedOperatorError(
+                         f"policy {policy!r} does not consume far-field damping; "
+                         "raw_damping_far_field must be absent"))
+        expected_B = _derive_damping(policy, self.raw_damping,
+                                     self.raw_damping_far_field,
+                                     np.asarray(self.settings.normalization.scales))
+        _require(bool(np.array_equal(self.derived_damping, expected_B)),
+                 DerivedOperatorError(
+                     "derived_damping is not the declared policy applied to raw_damping"))
         for raw_name, der_name in (
             ("raw_added_mass", "derived_added_mass"),
-            ("raw_damping", "derived_damping"),
             ("raw_added_mass_infinite", "derived_added_mass_infinite"),
         ):
-            expected = _apply_policy(policy, getattr(self, raw_name))
+            expected = _apply_policy(
+                CORRECTION_RECIPROCAL_AVERAGE if policy in FAR_FIELD_POLICIES else policy,
+                getattr(self, raw_name))
             _require(bool(np.array_equal(getattr(self, der_name), expected)),
                      DerivedOperatorError(
                          f"{der_name} is not the declared policy applied to {raw_name}"))
@@ -1138,9 +1212,14 @@ class DerivedHydroOperators:
                      "raw_added_mass", "raw_damping", "raw_added_mass_infinite",
                      "derived_added_mass", "derived_damping",
                      "derived_added_mass_infinite", "hydrostatic_stiffness",
-                     "excitation_force"):
-            _require(bool(np.array_equal(np.asarray(getattr(self, name)),
-                                         np.asarray(getattr(rebuilt, name)))),
+                     "excitation_force", "raw_damping_far_field"):
+            mine, theirs = getattr(self, name), getattr(rebuilt, name)
+            _require((mine is None) == (theirs is None),
+                     DerivedOperatorError(
+                         f"stored {name} presence does not match the raw-source rederivation"))
+            if mine is None:
+                continue
+            _require(bool(np.array_equal(np.asarray(mine), np.asarray(theirs))),
                      DerivedOperatorError(
                          f"stored {name} does not match the raw-source "
                          "rederivation; the artifact data did not come from "
@@ -1227,6 +1306,8 @@ class DerivedHydroOperators:
             ("hydrostatic_stiffness", self.hydrostatic_stiffness),
             ("excitation_force", self.excitation_force),
         ]
+        if self.raw_damping_far_field is not None:
+            arrays.append(("raw_damping_far_field", self.raw_damping_far_field))
         arrays.extend(self.report._named_arrays())
         return tuple(arrays)
 
@@ -1258,7 +1339,7 @@ def _decoded_attr(value):
     return value
 
 
-def _source_provenance(ds: xr.Dataset) -> dict:
+def _source_provenance(ds: xr.Dataset, include_far_field: bool = False) -> dict:
     """Complete producing provenance of the raw source, verbatim.
 
     Preserves the actual complete source attributes (backend settings,
@@ -1275,7 +1356,8 @@ def _source_provenance(ds: xr.Dataset) -> dict:
     center_of_buoyancy = ds["center_of_buoyancy"].values
     source_attrs = {str(k): _decoded_attr(v) for k, v in ds.attrs.items()}
     variable_attrs = {}
-    for name in SOURCE_VARIABLES:
+    names = SOURCE_VARIABLES + (("radiation_damping_far_field",) if include_far_field else ())
+    for name in names:
         if name in ds.variables and len(ds[name].attrs):
             variable_attrs[name] = {str(k): _decoded_attr(v)
                                     for k, v in ds[name].attrs.items()}
@@ -1365,14 +1447,24 @@ def derived_operators_from_dataset(
     excitation = np.einsum("ia,owi->owa", P, F_full)
 
     policy = settings.correction_policy
-    derived_A = _apply_policy(policy, raw_A)
-    derived_B = _apply_policy(policy, raw_B)
-    derived_Ainf = _apply_policy(policy, raw_Ainf)
+    raw_B_far = None
+    if policy in FAR_FIELD_POLICIES:
+        _require("radiation_damping_far_field" in ds.data_vars,
+                 DerivedOperatorError(
+                     f"policy {policy!r} requires the dataset variable "
+                     "radiation_damping_far_field (indirect-method Capytaine adapter >= 0.5.0)"))
+        B_far_full = np.asarray(ds["radiation_damping_far_field"].values, dtype=np.float64)
+        raw_B_far = np.einsum("ia,oij,jb->oab", P, B_far_full, P)
+    av_policy = CORRECTION_RECIPROCAL_AVERAGE if policy in FAR_FIELD_POLICIES else policy
+    derived_A = _apply_policy(av_policy, raw_A)
+    derived_B = _derive_damping(policy, raw_B, raw_B_far,
+                                np.asarray(settings.normalization.scales))
+    derived_Ainf = _apply_policy(av_policy, raw_Ainf)
 
     dirs = np.asarray(ds["wave_direction"].values, dtype=np.float64)
     bodies = [str(v) for v in ds["body"].values.tolist()]
 
-    provenance = _source_provenance(ds)
+    provenance = _source_provenance(ds, include_far_field=policy in FAR_FIELD_POLICIES)
 
     report = _build_report(settings, omegas, P, raw_A, raw_B, raw_Ainf,
                            derived_A, derived_B, derived_Ainf,
@@ -1395,6 +1487,7 @@ def derived_operators_from_dataset(
         excitation_force=excitation,
         report=report,
         provenance=provenance,
+        raw_damping_far_field=raw_B_far,
     )
 
 
@@ -1629,6 +1722,8 @@ def load_derived_operators(path, source_dataset=None) -> DerivedHydroOperators:
         with np.load(target, allow_pickle=False) as archive:
             names = set(archive.files)
             expected = set(_expected_array_names()) | {"meta"}
+            if "raw_damping_far_field" in names:
+                expected = expected | {"raw_damping_far_field"}
             if "meta" not in names:
                 raise DerivedOperatorSerializationError(
                     f"{target} is missing the meta record; not a "
@@ -1675,6 +1770,10 @@ def load_derived_operators(path, source_dataset=None) -> DerivedHydroOperators:
             f"{target} has invalid or tampered settings: {exc}") from exc
 
     raw = {name: data[name] for name in _expected_array_names()}
+    far_present = "raw_damping_far_field" in data
+    _require(far_present == (settings.correction_policy in FAR_FIELD_POLICIES),
+             DerivedOperatorSerializationError(
+                 f"{target} far-field damping presence does not match its policy"))
     report = _report_from_arrays(settings, raw, meta["report_scalars"])
     try:
         artifact = DerivedHydroOperators(
@@ -1694,6 +1793,7 @@ def load_derived_operators(path, source_dataset=None) -> DerivedHydroOperators:
             excitation_force=raw["excitation_force"],
             report=report,
             provenance=meta["provenance"],
+            raw_damping_far_field=data["raw_damping_far_field"] if far_present else None,
         )
     except DerivedOperatorError as exc:
         raise DerivedOperatorSerializationError(

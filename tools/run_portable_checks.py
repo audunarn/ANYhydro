@@ -43,6 +43,7 @@ PORTABLE_TEST_MODULES = (
     "test_derived_operators",
     "test_execution_limits",
     "test_execution_limits_persistence_hash",
+    "test_far_field_weak_modes",
     "test_finite_depth_john_oracle",
     "test_first_slice_fixture",
     "test_fixtures",

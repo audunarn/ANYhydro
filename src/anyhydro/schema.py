@@ -48,6 +48,8 @@ MANDATORY_VARIABLES: Mapping[str, tuple] = {
 
 OPTIONAL_VARIABLES: Mapping[str, tuple] = {
     "added_mass_infinite": (("influenced_dof", "radiating_dof"), "float"),
+    # far-field (Kochin energy-flux) damping; positive semidefinite per frequency
+    "radiation_damping_far_field": (("omega", "influenced_dof", "radiating_dof"), "float"),
     "froude_krylov_force": (("omega", "wave_direction", "influenced_dof"), "complex"),
     "diffraction_force": (("omega", "wave_direction", "influenced_dof"), "complex"),
     "mean_drift_force": (("omega", "wave_direction", "influenced_dof"), "complex"),
@@ -301,7 +303,7 @@ def validate_hydro_dataset(ds: xr.Dataset) -> xr.Dataset:
     for name, spec in OPTIONAL_VARIABLES.items():
         if name not in ds.data_vars:
             continue
-        if name == "added_mass_infinite":
+        if name in ("added_mass_infinite", "radiation_damping_far_field"):
             _require(
                 tuple(ds[name].dims) == spec[0] and ds[name].dtype == np.float64,
                 f"variable {name!r} must be float64 with dims {spec[0]}",
@@ -418,6 +420,8 @@ def assemble_hydro_dataset(
     center_of_buoyancy,
     added_mass_infinite=None,
     added_mass_infinite_source: Optional[str] = None,
+    radiation_damping_far_field=None,
+    radiation_damping_far_field_source: Optional[str] = None,
     backend: str = "unknown",
     backend_version: str = "unknown",
     backend_commit: str = "unknown",
@@ -490,6 +494,17 @@ def assemble_hydro_dataset(
         a_inf = _float64("added_mass_infinite", added_mass_infinite, (n_dof, n_dof))
         data_vars["added_mass_infinite"] = (("influenced_dof", "radiating_dof"), a_inf)
 
+    if radiation_damping_far_field is not None:
+        _require(
+            isinstance(radiation_damping_far_field_source, str)
+            and radiation_damping_far_field_source.strip(),
+            "radiation_damping_far_field requires a non-empty source description",
+        )
+        b_far = _float64("radiation_damping_far_field", radiation_damping_far_field,
+                         (n_omega, n_dof, n_dof))
+        data_vars["radiation_damping_far_field"] = (
+            ("omega", "influenced_dof", "radiating_dof"), b_far)
+
     if created_utc is None:
         created_utc = _dt.datetime.now(_dt.timezone.utc).isoformat()
 
@@ -556,6 +571,10 @@ def assemble_hydro_dataset(
     if "added_mass_infinite" in ds.data_vars:
         ds["added_mass_infinite"] = ds["added_mass_infinite"].assign_attrs(
             source=str(added_mass_infinite_source)
+        )
+    if "radiation_damping_far_field" in ds.data_vars:
+        ds["radiation_damping_far_field"] = ds["radiation_damping_far_field"].assign_attrs(
+            source=str(radiation_damping_far_field_source)
         )
 
     return validate_hydro_dataset(ds)

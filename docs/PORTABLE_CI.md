@@ -88,6 +88,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_submerged_lid | submerged lid policy (mocked solve) |
 | test_surfaces | thin-sheet surface semantics |
 | test_transform | coordinate transforms |
+| test_far_field_weak_modes | far-field damping and the far-field weak-mode operator policy; backend check skips without Capytaine |
 | test_finite_depth_john_oracle | independent John-series finite-depth oracle; actual-record checks skip without local evidence |
 | test_physical_green_field | physical Green-field discriminator (mocked native route) |
 | test_green_function | exact propagating imaginary part of the Green function; real-Capytaine checks skip without the extra |

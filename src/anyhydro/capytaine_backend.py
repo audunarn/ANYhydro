@@ -35,6 +35,7 @@ silent flip.
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 import importlib.metadata
 import importlib.util
 import json
@@ -55,7 +56,9 @@ from .errors import (
     UnsupportedOperationError,
 )
 from .persistence import load_hydro_dataset, save_hydro_dataset
-from .green_function import IMAGINARY_PART_FORMAT, anyhydro_green_function
+from .green_function import (FAR_FIELD_DAMPING_FORMAT, IMAGINARY_PART_FORMAT,
+                             anyhydro_green_function, far_field_damping,
+                             far_field_theta_count)
 from .prony_fit import PRONY_FIT_FORMAT
 from .records import HydroBody, HydroRequest
 from .schema import SCHEMA_VERSION, assemble_hydro_dataset
@@ -67,7 +70,10 @@ __all__ = [
     "SUPPORTED_SETTINGS",
 ]
 
-CAPYTAINE_ADAPTER_VERSION = "0.4.0"
+CAPYTAINE_ADAPTER_VERSION = "0.5.0"
+
+#: Largest heading count for the far-field damping (k R bound); refused above.
+MAX_FAR_FIELD_THETA = 16384
 
 #: The only backend setting keys this adapter understands; unknown keys are
 #: refused instead of silently ignored.
@@ -452,6 +458,7 @@ class CapytaineBackend(HydrodynamicsBackend):
             "capytaine_version": cpt_version,
             "finite_depth_prony_decomposition": PRONY_FIT_FORMAT,
             "green_function_imaginary_part": IMAGINARY_PART_FORMAT,
+            "far_field_damping": FAR_FIELD_DAMPING_FORMAT,
             "settings": dict(settings),
             "execution_limits": self._limits.as_dict(),
             "request": {
@@ -764,7 +771,32 @@ class CapytaineBackend(HydrodynamicsBackend):
                 cpt_labels.append(_cpt_dof_label(b.body_id, dof))
         n_dof = len(our_keys)
 
-        # -- one combined fill_dataset call over the full grid -------------
+        # -- one combined solve over the full grid ---------------------------
+        # Equivalent to BEMSolver.fill_dataset (problems_from_dataset +
+        # solve_all + assemble_dataset). With the indirect method the source
+        # strengths are kept so the radiation Kochin functions of the same
+        # solves give the far-field (energy-flux) damping, positive
+        # semidefinite by construction (anyhydro.green_function).  A direct
+        # solve carries no far-field damping.
+        method = settings.get("method")
+        far_field = method in (None, "indirect")
+        n_theta = 0
+        if far_field:
+            all_vertices = np.vstack(
+                [np.asarray(b.mesh.vertices, dtype=np.float64) for b in bodies]
+                + [np.asarray(b.lid_mesh.vertices, dtype=np.float64)
+                   for b in bodies if b.lid_mesh is not None])
+            # H_i^* H_j does not depend on the Kochin reference point, so the
+            # bandwidth is set by the radius about the horizontal bounding centre
+            centre = 0.5 * (all_vertices[:, :2].min(axis=0) + all_vertices[:, :2].max(axis=0))
+            radius = float(np.max(np.hypot(all_vertices[:, 0] - centre[0],
+                                           all_vertices[:, 1] - centre[1])))
+            n_theta = far_field_theta_count(
+                request.omegas, float(request.water_depth), float(request.gravity), radius)
+            if n_theta > MAX_FAR_FIELD_THETA:
+                raise CapabilityError(
+                    f"far-field damping needs {n_theta} headings (k R too large) > "
+                    f"{MAX_FAR_FIELD_THETA}; this adapter refuses rather than undersample")
         matrix = xr.Dataset(
             coords={
                 "omega": np.asarray(request.omegas, dtype=np.float64),
@@ -782,16 +814,21 @@ class CapytaineBackend(HydrodynamicsBackend):
         # tabulated imaginary part gave indefinite damping); see
         # anyhydro.green_function and docs/FINITE_DEPTH_PRONY.md.
         solver = cpt.BEMSolver(green_function=anyhydro_green_function())
-        method = settings.get("method")
-        result = solver.fill_dataset(
-            matrix,
-            combined,
+        from capytaine.io.xarray import assemble_dataset, problems_from_dataset
+        problems = problems_from_dataset(matrix, combined)
+        results = solver.solve_all(
+            problems,
+            keep_details=far_field,
             method=method,
             n_jobs=self._limits.n_jobs,
             n_threads=self._limits.n_threads,
             progress_bar=False,
-            hydrostatics=False,
         )
+        attrs = {"start_of_computation": datetime.now().isoformat(),
+                 **solver.exportable_settings}
+        if method is not None:
+            attrs["method"] = method
+        result = assemble_dataset(results, attrs=attrs, hydrostatics=False)
 
         def _finite(name: str, values: np.ndarray) -> np.ndarray:
             if np.iscomplexobj(values):
@@ -828,6 +865,26 @@ class CapytaineBackend(HydrodynamicsBackend):
             .transpose("omega", "wave_direction", "influenced_dof")
             .values.astype(np.complex128),
         )
+        damping_far = None
+        if far_field:
+            from capytaine.post_pro.kochin import compute_kochin
+            theta = np.arange(n_theta, dtype=np.float64) * (2.0 * np.pi / n_theta)
+            omegas_req = np.asarray(request.omegas, dtype=np.float64)
+            kochin = np.full((omegas_req.size, n_dof, n_theta), np.nan, dtype=np.complex128)
+            label_index = {label: i for i, label in enumerate(cpt_labels)}
+            for res in results:
+                dof = getattr(res.problem, "radiating_dof", None)
+                if dof is None:
+                    continue          # diffraction: no far-field damping needed
+                o = int(np.flatnonzero(omegas_req == float(res.problem.omega))[0])
+                kochin[o, label_index[dof]] = compute_kochin(res, theta)
+            kochin = _finite("kochin_radiation", kochin)
+            wavenumbers = np.asarray(result["wavenumber"].values, dtype=np.float64)
+            damping_far = _finite(
+                "radiation_damping_far_field",
+                far_field_damping(kochin, np.asarray(request.omegas, dtype=np.float64),
+                                  wavenumbers, float(request.water_depth), float(request.rho)),
+            )
 
         # -- buoyancy-only hydrostatics per sub-body, block-assembled -------
         stiffness = np.zeros((n_dof, n_dof), dtype=np.float64)
@@ -907,6 +964,12 @@ class CapytaineBackend(HydrodynamicsBackend):
             center_of_buoyancy=centers_of_buoyancy,
             added_mass_infinite=added_mass_infinite,
             added_mass_infinite_source=a_inf_source,
+            radiation_damping_far_field=damping_far,
+            radiation_damping_far_field_source=(
+                None if damping_far is None else
+                f"{FAR_FIELD_DAMPING_FORMAT}: (4 pi rho k/(omega D)) Re int H_i^* H_j dtheta "
+                f"from capytaine {_capytaine_version()} Kochin functions of the same "
+                f"radiation solves, {n_theta} uniform theta samples"),
             backend="capytaine",
             backend_version=_capytaine_version(),
             backend_commit="unknown",

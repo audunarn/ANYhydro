@@ -42,6 +42,23 @@ relabeled raw dataset, and `schema.validate_hydro_dataset` still requires all
   wave and frequency coordinates are never modified. There is no PSD
   clamping, no tuning, and no default policy: omitting the policy is a
   settings error.
+- `CORRECTION_FAR_FIELD_WEAK_MODES`
+  (`"reciprocal_average_far_field_weak_modes"`): the reciprocal average,
+  then, per frequency in the declared normalized coordinates, the symmetric
+  damping's block on its weak subspace (eigenvalues below
+  `WEAK_MODE_FRACTION = 1e-3` times the largest, the adopted W5 energetic
+  threshold; orthonormal basis `V_w`) is replaced by the far-field damping
+  compressed onto it: `B + V_w (V_w^T F V_w - Lambda_w) V_w^T`
+  (basis-independent for repeated weak eigenvalues). Requires the dataset
+  variable `radiation_damping_far_field` (Capytaine adapter >= 0.5.0,
+  indirect method); the retained far-field matrix is stored in the artifact
+  (`raw_damping_far_field`) and its source description in the provenance,
+  so the invariant and the raw-source proof are recomputed exactly.
+  Far-field (Kochin energy-flux) damping is positive semidefinite by
+  construction and is the accurate estimator for nearly non-radiating
+  modes, which pressure integration cannot resolve at practical meshes (W5
+  evidence `w5-physical-20261012`). Energetic modes, A and A_inf are
+  untouched. Artifacts of the other policies are unchanged (no new array).
 
 ## Criteria and the report
 

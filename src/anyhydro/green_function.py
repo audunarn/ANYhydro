@@ -30,6 +30,7 @@ import numpy as np
 from .prony_fit import PRONY_FIT_FORMAT, _validated_class
 
 IMAGINARY_PART_FORMAT = 'anyhydro-exact-propagating-imaginary-v1'
+FAR_FIELD_DAMPING_FORMAT = 'anyhydro-kochin-far-field-damping-v1'
 GREEN_FUNCTION_FORMAT = 'anyhydro-green-function-v1'
 _ROW_BLOCK = 512
 
@@ -54,6 +55,59 @@ def dispersion_factor(k, water_depth):
     kh = k * water_depth
     t = math.tanh(kh)
     return t + kh * (1.0 - t * t)
+
+
+def solve_wavenumber(omega, gravity, water_depth):
+    """Positive root of omega^2/g = k tanh(k h) (deep water: omega^2/g)."""
+    nu = omega * omega / gravity
+    if math.isinf(water_depth) or nu * water_depth > 40.0:
+        return nu
+    lo, hi = 0.0, max(nu, 1.0 / water_depth) * 2.0 + nu
+    while hi * math.tanh(hi * water_depth) < nu:
+        hi *= 2.0
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if mid * math.tanh(mid * water_depth) < nu:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def far_field_theta_count(omegas, water_depth, gravity, radius, *, minimum=720):
+    """Uniform heading count resolving the Kochin functions of all frequencies.
+
+    A source distribution within horizontal radius R has Kochin harmonics up
+    to about k R; the periodic trapezoid rule over N headings integrates the
+    products |m| <= 2 k R exactly when N > 4 k R (with a 64 margin).
+    """
+    k_max = max(solve_wavenumber(float(w), gravity, water_depth) for w in omegas)
+    n = int(4 * math.ceil(k_max * radius) + 64)
+    return max(int(minimum), n)
+
+
+def far_field_damping(kochin, omegas, wavenumbers, water_depth, rho):
+    """Far-field radiation damping from radiation Kochin functions.
+
+    ``kochin`` has shape (omega, radiating_dof, theta) on a uniform heading
+    grid over [0, 2 pi), for unit-amplitude rigid motions with Capytaine's
+    ``H = (1/4 pi) int sigma Z e^{-i k d.x} dS``.  The outgoing energy flux
+    gives ``B_ij = (4 pi rho k / (omega D)) Re int H_i^* H_j d theta``,
+    D = tanh kh + kh sech^2 kh (1 in deep water).  The result is a real
+    symmetric positive semidefinite matrix per frequency by construction.
+    """
+    H = np.asarray(kochin, dtype=np.complex128)
+    omegas = np.asarray(omegas, dtype=np.float64)
+    ks = np.asarray(wavenumbers, dtype=np.float64)
+    if H.ndim != 3 or H.shape[0] != omegas.size or ks.shape != omegas.shape:
+        raise ValueError('kochin must be (omega, dof, theta) matching omegas/wavenumbers')
+    n_theta = H.shape[2]
+    out = np.empty((H.shape[0], H.shape[1], H.shape[1]))
+    for o, (w, k) in enumerate(zip(omegas, ks)):
+        c = 4.0 * math.pi * rho * k / (w * dispersion_factor(k, water_depth))
+        gram = (H[o].conj() @ H[o].T).real * (2.0 * math.pi / n_theta)
+        out[o] = c * 0.5 * (gram + gram.T)
+    return out
 
 
 def propagating_imaginary(points, quad_points, quad_weights, *, k, water_depth,
