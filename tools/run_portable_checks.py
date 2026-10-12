@@ -65,6 +65,7 @@ PORTABLE_TEST_MODULES = (
     "test_radiation_parent_review",
     "test_records",
     "test_retained_panel_energy_audit",
+    "test_retained_block_criteria",
     "test_retained_panel_pairs",
     "test_retained_weak_neumann",
     "test_review_repairs",
