@@ -55,7 +55,8 @@ from .errors import (
     UnsupportedOperationError,
 )
 from .persistence import load_hydro_dataset, save_hydro_dataset
-from .prony_fit import PRONY_FIT_FORMAT, validated_delhommeau
+from .green_function import IMAGINARY_PART_FORMAT, anyhydro_green_function
+from .prony_fit import PRONY_FIT_FORMAT
 from .records import HydroBody, HydroRequest
 from .schema import SCHEMA_VERSION, assemble_hydro_dataset
 
@@ -66,7 +67,7 @@ __all__ = [
     "SUPPORTED_SETTINGS",
 ]
 
-CAPYTAINE_ADAPTER_VERSION = "0.3.0"
+CAPYTAINE_ADAPTER_VERSION = "0.4.0"
 
 #: The only backend setting keys this adapter understands; unknown keys are
 #: refused instead of silently ignored.
@@ -450,6 +451,7 @@ class CapytaineBackend(HydrodynamicsBackend):
             "schema_version": SCHEMA_VERSION,
             "capytaine_version": cpt_version,
             "finite_depth_prony_decomposition": PRONY_FIT_FORMAT,
+            "green_function_imaginary_part": IMAGINARY_PART_FORMAT,
             "settings": dict(settings),
             "execution_limits": self._limits.as_dict(),
             "request": {
@@ -775,10 +777,11 @@ class CapytaineBackend(HydrodynamicsBackend):
                 "g": float(request.gravity),
             }
         )
-        # Finite depth: deterministic validated Prony decomposition instead of
-        # Capytaine's default (MSE < 1e-4 on a randomized grid admits
-        # pointwise remainder errors of 0.02-0.08; see anyhydro.prony_fit).
-        solver = cpt.BEMSolver(green_function=validated_delhommeau(cpt))
+        # Capytaine Delhommeau with the validated finite-depth Prony
+        # decomposition and the exact propagating imaginary part (the
+        # tabulated imaginary part gave indefinite damping); see
+        # anyhydro.green_function and docs/FINITE_DEPTH_PRONY.md.
+        solver = cpt.BEMSolver(green_function=anyhydro_green_function())
         method = settings.get("method")
         result = solver.fill_dataset(
             matrix,

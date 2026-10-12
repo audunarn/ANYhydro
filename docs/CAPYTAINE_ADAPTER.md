@@ -112,11 +112,14 @@ qualification.
 
 ## Green function
 
-Solves use Capytaine's `Delhommeau` Green function with one change: the
-finite-depth remainder is decomposed by `anyhydro.prony_fit` (deterministic,
-accepted on a measured maximum pointwise error, refused otherwise) instead of
-Capytaine's default randomized fit with a mean-square tolerance. Adapter
-version 0.3.0 marks the change; see `docs/FINITE_DEPTH_PRONY.md`.
+Solves use Capytaine's `Delhommeau` Green function with two changes
+(`anyhydro.green_function`): the finite-depth remainder is decomposed by
+`anyhydro.prony_fit` (deterministic, accepted on a measured maximum pointwise
+error, refused otherwise) instead of Capytaine's default randomized fit with a
+mean-square tolerance; and the imaginary part of the kernel, which is exactly
+the propagating mode, is evaluated analytically instead of from Capytaine's
+tabulation, whose small indefinite error produced negative radiation-damping
+eigenvalues. Adapter version 0.4.0 marks both; see `docs/FINITE_DEPTH_PRONY.md`.
 
 ## Cache
 

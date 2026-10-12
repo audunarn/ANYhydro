@@ -46,6 +46,7 @@ PORTABLE_TEST_MODULES = (
     "test_finite_depth_john_oracle",
     "test_first_slice_fixture",
     "test_fixtures",
+    "test_green_function",
     "test_hams_producer",
     "test_hams_reference",
     "test_hashing",

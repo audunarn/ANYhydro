@@ -71,3 +71,22 @@ retained W5 coupled point 03c, which therefore have another cause.
 * The artifact-bound W5 reference profile still binds the frozen original
   producer coefficients by design; comparisons against that reference inherit
   its fit error.
+
+## Exact imaginary part (adapter 0.4.0)
+
+W5 evidence (anymarine-evidence/w5-route-comparison-20261012) showed that Capytaine's
+default tabulated wave term gives a pressure-integrated damping matrix with a
+negative eigenvalue for two boxes 4 m apart (omega = 1.5 rad/s, h = 150 m): about
+-0.011 against a largest eigenvalue of 206, unchanged by mesh refinement or a
+finer table, while far-field (Kochin) damping is positive (+0.0015). Without
+tabulation the near-field value becomes +0.0015 and near/far agree on every mode,
+but the solve is about 140 times slower. The imaginary part of the outgoing
+finite-depth kernel is exactly the propagating mode
+`Im G = -(k/(2D)) Z(x3) Z(xi3) J0(k r)`; `anyhydro.green_function` evaluates it
+analytically with the same source quadrature, keeping the tabulated real part.
+Capytaine's untabulated imaginary part agrees to ~1e-8, except for a source and
+receiver both exactly on z = 0 (waterline lid self panels), where upstream flips the
+sign (+k/2 per unit area instead of the continuous -k/2); the exact term is
+continuous there. With realistic lid refinements this changes damping by < 0.03 %.
+Matrix evaluation costs about 1.3 times the default (independent measurement); the
+two-box damping becomes positive and far-field consistent.

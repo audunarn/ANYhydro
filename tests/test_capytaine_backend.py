@@ -311,7 +311,9 @@ class TestDirectCapytaineComparison:
                 "g": float(request.gravity),
             }
         )
-        solver = cpt.BEMSolver()
+        # same documented Green function as the adapter (anyhydro.green_function)
+        from anyhydro.green_function import anyhydro_green_function
+        solver = cpt.BEMSolver(green_function=anyhydro_green_function())
         direct = solver.fill_dataset(
             matrix, combined, n_jobs=1, n_threads=1, progress_bar=False,
             hydrostatics=False,
@@ -432,3 +434,33 @@ class TestCache:
         backend = CapytaineBackend()
         backend.solve(_dev_bodies(), _dev_request())
         assert list(tmp_path.glob("*.nc")) == []
+
+    def test_repaired_green_function_stays_close_to_upstream_default(self, solved_dataset):
+        """The adapter's kernel repairs are small corrections, not a different model."""
+        import capytaine as cpt
+
+        bodies = _dev_bodies()
+        request = _dev_request(include_infinite_frequency=True)
+        cpt_bodies = [
+            cpt.FloatingBody(
+                cpt.Mesh(vertices=np.array(b.mesh.vertices, dtype=np.float64),
+                         faces=[[int(v) for v in b.mesh.faces[i, : int(b.mesh.face_sizes[i])]]
+                                for i in range(b.mesh.faces.shape[0])]),
+                dofs=cpt.rigid_body_dofs(rotation_center=tuple(b.rotation_center)),
+                center_of_mass=tuple(b.center_of_mass), mass=0.0, name=b.body_id)
+            for b in bodies]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            combined = cpt.Multibody(cpt_bodies, name="direct")
+        labels = [f"{b.body_id}__{cb._CPT_DOF_NAME[d]}" for b in bodies for d in cb._CPT_DOF_NAME]
+        solver = cpt.BEMSolver()   # upstream default kernel
+        for io, omega in enumerate(request.omegas):
+            for j, rad in enumerate(labels):
+                r = solver.solve(cpt.RadiationProblem(
+                    body=combined, radiating_dof=rad, omega=float(omega),
+                    water_depth=float(request.water_depth), rho=float(request.rho),
+                    g=float(request.gravity)))
+                for name, mine in (("added_mass", solved_dataset.added_mass.values[io, :, j]),
+                                   ("radiation_damping", solved_dataset.radiation_damping.values[io, :, j])):
+                    ref = np.array([getattr(r, name)[lab] for lab in labels])
+                    scale = max(np.abs(ref).max(), 1e-12)
+                    assert np.max(np.abs(mine - ref)) <= 1e-2 * scale, (name, omega, rad)

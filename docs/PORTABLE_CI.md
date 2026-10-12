@@ -90,6 +90,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_transform | coordinate transforms |
 | test_finite_depth_john_oracle | independent John-series finite-depth oracle; actual-record checks skip without local evidence |
 | test_physical_green_field | physical Green-field discriminator (mocked native route) |
+| test_green_function | exact propagating imaginary part of the Green function; real-Capytaine checks skip without the extra |
 | test_prony_fit | validated finite-depth Prony decomposition; real-Capytaine checks skip without the extra |
 | test_retained_block_criteria | W5 retained-block criteria R1-R8; actual 03c check skips without local evidence |
 | test_retained_panel_energy_audit | retained panel energy audit tool |
