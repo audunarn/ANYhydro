@@ -35,7 +35,7 @@ import json
 import numbers
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Mapping, Optional, Tuple
 
@@ -248,6 +248,7 @@ SETTINGS_SERIALIZED_KEYS = frozenset({
     "execution_limits", "quadrature_method",
     "high_tail_policy", "high_tail_exponent", "high_tail_upper", "high_tail_name",
     "high_tail_scope", "a_inf_policy", "a_inf_calibration_min", "a_inf_calibration_max",
+    "a_inf_calibration_dt",
 })
 
 
@@ -297,6 +298,11 @@ class RadiationSettings:
     a_inf_policy: str = A_INF_COMPUTED
     a_inf_calibration_min: Optional[float] = None
     a_inf_calibration_max: Optional[float] = None
+    #: Optional calibration time step for the band-consistent A_inf. When it
+    #: differs from ``dt``, the A_inf difference is computed on a kernel
+    #: rebuilt at this step over the same horizon, so kernels at different
+    #: ``dt`` share one A_inf (time-step refinement of one physical model).
+    a_inf_calibration_dt: Optional[float] = None
 
     def __post_init__(self) -> None:
         try:
@@ -413,7 +419,8 @@ class RadiationSettings:
                  RadiationSettingsError(f"a_inf_policy must be one of {A_INF_POLICIES}"))
         object.__setattr__(self, "a_inf_policy", a_policy)
         if a_policy == A_INF_COMPUTED:
-            _require(self.a_inf_calibration_min is None and self.a_inf_calibration_max is None,
+            _require(self.a_inf_calibration_min is None and self.a_inf_calibration_max is None
+                     and self.a_inf_calibration_dt is None,
                      RadiationSettingsError(
                          "a_inf calibration band is only valid with a_inf_policy='band_consistent'"))
         else:
@@ -427,6 +434,21 @@ class RadiationSettings:
                      RadiationSettingsError("calibration band must satisfy 0 < min < max"))
             object.__setattr__(self, "a_inf_calibration_min", lo)
             object.__setattr__(self, "a_inf_calibration_max", hi)
+            if self.a_inf_calibration_dt is not None:
+                _require(not isinstance(self.a_inf_calibration_dt, bool)
+                         and isinstance(self.a_inf_calibration_dt, numbers.Real),
+                         RadiationSettingsError("a_inf_calibration_dt must be a number"))
+                cal_dt = float(self.a_inf_calibration_dt)
+                _require(np.isfinite(cal_dt) and 0.0 < cal_dt <= dt,
+                         RadiationSettingsError(
+                             "a_inf_calibration_dt must be finite in (0, dt]: calibrate on "
+                             "the same or a finer kernel grid"))
+                ratio = (int(self.n_time) - 1) * dt / cal_dt
+                _require(np.isfinite(ratio) and abs(ratio - round(ratio)) <= 1e-9 * max(1.0, ratio),
+                         RadiationSettingsError(
+                             "a_inf_calibration_dt must divide the kernel horizon "
+                             "(n_time - 1) * dt into whole steps"))
+                object.__setattr__(self, "a_inf_calibration_dt", cal_dt)
 
         if self.time_window is not None:
             try:
@@ -442,6 +464,21 @@ class RadiationSettings:
     @property
     def kernel_duration(self) -> float:
         return (self.n_time - 1) * self.dt
+
+    @property
+    def calibrates_on_separate_grid(self) -> bool:
+        """True when the band-consistent A_inf is calibrated at another dt."""
+        return self.a_inf_calibration_dt is not None and self.a_inf_calibration_dt != self.dt
+
+    def calibration_settings(self) -> "RadiationSettings":
+        """Computed-A_inf settings of the calibration kernel (same horizon)."""
+        _require(self.calibrates_on_separate_grid,
+                 RadiationSettingsError("no separate A_inf calibration grid is declared"))
+        cal_dt = self.a_inf_calibration_dt
+        n_time = int(round((self.n_time - 1) * self.dt / cal_dt)) + 1
+        return replace(self, dt=cal_dt, n_time=n_time, a_inf_policy=A_INF_COMPUTED,
+                       a_inf_calibration_min=None, a_inf_calibration_max=None,
+                       a_inf_calibration_dt=None)
 
     def to_dict(self) -> dict:
         data = {
@@ -474,6 +511,9 @@ class RadiationSettings:
             data["a_inf_policy"] = self.a_inf_policy
             data["a_inf_calibration_min"] = float(self.a_inf_calibration_min)
             data["a_inf_calibration_max"] = float(self.a_inf_calibration_max)
+            # Omitted when undeclared: earlier band-consistent hashes are unchanged.
+            if self.a_inf_calibration_dt is not None:
+                data["a_inf_calibration_dt"] = float(self.a_inf_calibration_dt)
         return data
 
     @classmethod
@@ -525,6 +565,7 @@ class RadiationSettings:
                 a_inf_policy=data.get("a_inf_policy", A_INF_COMPUTED),
                 a_inf_calibration_min=data.get("a_inf_calibration_min"),
                 a_inf_calibration_max=data.get("a_inf_calibration_max"),
+                a_inf_calibration_dt=data.get("a_inf_calibration_dt"),
             )
         except KeyError as exc:
             raise RadiationSettingsError(
@@ -792,13 +833,17 @@ def _full_block_report(criteria, window, a_rec, b_rec, a_ref, b_ref, a_inf_diffe
 
 
 def verify_band_consistent_added_mass_infinite(kernel, computed_a_inf, omegas, added_mass,
-                                               rel_tol: float = 1e-9) -> np.ndarray:
+                                               rel_tol: float = 1e-9,
+                                               calibration_source=None) -> np.ndarray:
     """Prove a kernel's band-consistent A_inf; return the kernel A_inf.
 
     Requires ``a_inf_policy='band_consistent'``, the recorded computed A_inf
     equal to ``computed_a_inf`` exactly, and the kernel's own A_inf to make
     the mean of (A - A_rec) over the recorded calibration frequencies vanish
     (to ``rel_tol`` of max|A|), with those frequencies drawn from ``omegas``.
+    When the kernel declares a separate calibration step, A_rec comes from
+    the calibration kernel rebuilt from ``calibration_source``, the kernel's
+    own derived operator artifact (content-hash bound).
     """
     _require(kernel.settings.a_inf_policy == A_INF_BAND_CONSISTENT,
              RadiationError("kernel does not declare a band-consistent A_inf"))
@@ -819,7 +864,19 @@ def verify_band_consistent_added_mass_infinite(kernel, computed_a_inf, omegas, a
     _require(delta.shape == recorded.shape
              and bool(np.array_equal(recorded + delta, np.asarray(kernel.added_mass_infinite))),
              RadiationError("recorded A_inf difference does not reproduce the kernel A_inf"))
-    a_rec, _ = kernel.reconstruct(cal)
+    _require(prov.get("a_inf_calibration_dt") == st.a_inf_calibration_dt,
+             RadiationError("recorded A_inf calibration step does not match the settings"))
+    if st.calibrates_on_separate_grid:
+        _require(isinstance(calibration_source, DerivedHydroOperators)
+                 and calibration_source.content_hash() == prov.get("derived_content_hash"),
+                 RadiationError("a separately calibrated A_inf is proved only against the "
+                                "kernel's own derived operator artifact"))
+        calibration = radiation_kernel_from_derived_operators(
+            calibration_source, st.calibration_settings())
+        a_rec, _ = calibration.reconstruct(cal)
+        a_rec = a_rec + delta
+    else:
+        a_rec, _ = kernel.reconstruct(cal)
     residual = np.mean(np.asarray(added_mass)[idx] - a_rec, axis=0)
     scale = float(np.max(np.abs(np.asarray(added_mass)[idx])))
     _require(float(np.max(np.abs(residual))) <= rel_tol * scale,
@@ -952,6 +1009,15 @@ class RadiationKernel:
         _require(isinstance(self.provenance, Mapping) and self.provenance,
                  RadiationError("provenance must be a non-empty mapping"))
         object.__setattr__(self, "provenance", _deep_freeze(dict(self.provenance)))
+        if self.settings.calibrates_on_separate_grid:
+            # Only the derived route can prove it (the verifier rebuilds the
+            # calibration kernel from the content-bound derived artifact).
+            _require(self.provenance.get("source_kind") == "derived_operators"
+                     and bool(self.provenance.get("derived_content_hash"))
+                     and self.provenance.get("a_inf_calibration_dt")
+                     == self.settings.a_inf_calibration_dt,
+                     RadiationError("a separately calibrated A_inf is valid on a "
+                                    "derived-operator kernel only, with its recorded step"))
         assumptions = tuple(str(a) for a in self.assumptions)
         object.__setattr__(self, "assumptions", assumptions)
 
@@ -1137,6 +1203,12 @@ def radiation_kernel_from_dataset(ds: xr.Dataset, settings: RadiationSettings) -
     """
     if not isinstance(settings, RadiationSettings):
         raise RadiationSettingsError("settings must be a RadiationSettings instance")
+    # Only the derived route can prove a separately calibrated A_inf (the
+    # verifier rebuilds it from the content-bound derived artifact).
+    _require(not settings.calibrates_on_separate_grid,
+             RadiationSettingsError(
+                 "a separate A_inf calibration step is supported on the derived-operator "
+                 "route only; the dataset route cannot prove it"))
 
     validate_for_time_domain(ds)
 
@@ -1414,7 +1486,18 @@ def _kernel_from_arrays(
         _require(int(np.count_nonzero(cal)) >= 2,
                  RadiationSettingsError(
                      "the A_inf calibration band must contain at least two source frequencies"))
-        a_rec_cal = _reconstruct_added_mass(t, kernel, a_inf, omegas[cal])
+        if settings.calibrates_on_separate_grid:
+            # The same core at the calibration step: identical to the kernel a
+            # build at that dt would sample, so paired dt share one A_inf.
+            calibration = _kernel_from_arrays(
+                omegas=omegas, added_mass=added_mass, damping=damping, a_inf=a_inf,
+                dof_keys=dof_keys, body_ids=body_ids,
+                settings=settings.calibration_settings(),
+                provenance={"role": "a_inf_calibration_kernel"})
+            a_rec_cal = _reconstruct_added_mass(
+                calibration.time, calibration.kernel, a_inf, omegas[cal])
+        else:
+            a_rec_cal = _reconstruct_added_mass(t, kernel, a_inf, omegas[cal])
         delta = np.mean(added_mass[cal] - a_rec_cal, axis=0)
         a_inf_computed = a_inf
         a_inf = a_inf + delta
@@ -1422,12 +1505,17 @@ def _kernel_from_arrays(
         provenance["a_inf_computed"] = a_inf_computed.tolist()
         provenance["a_inf_band_consistent_delta"] = delta.tolist()
         provenance["a_inf_calibration_omegas"] = omegas[cal].tolist()
+        if settings.a_inf_calibration_dt is not None:
+            provenance["a_inf_calibration_dt"] = float(settings.a_inf_calibration_dt)
         assumptions.append(
             f"a_inf_policy=band_consistent: time-domain A_inf = computed A_inf + mean over "
             f"{int(np.count_nonzero(cal))} source frequencies in "
             f"[{settings.a_inf_calibration_min:.17g}, {settings.a_inf_calibration_max:.17g}] "
             "of (A - A_rec); computed A_inf and the difference are in the provenance "
-            "(Ogilvie-consistent with this band-limited kernel)")
+            "(Ogilvie-consistent with this band-limited kernel"
+            + ("" if not settings.calibrates_on_separate_grid else
+               f", calibrated on the same kernel rebuilt at dt={settings.a_inf_calibration_dt:.17g}")
+            + ")")
     assumptions.extend(str(a) for a in extra_assumptions)
     if settings.execution_limits is not None:
         assumptions.append(
@@ -1553,6 +1641,9 @@ def compare_reconstruction(
     """
     if not isinstance(kernel, RadiationKernel):
         raise RadiationError("kernel must be a RadiationKernel")
+    _require(not kernel.settings.calibrates_on_separate_grid,
+             RadiationError("a separately calibrated A_inf kernel is compared on the "
+                            "derived-operator route only"))
     if not isinstance(criteria, ReconstructionCriteria):
         raise ReconstructionCriteriaError(
             "caller-declared ReconstructionCriteria are required; there is no default")
@@ -1676,7 +1767,7 @@ def compare_derived_reconstruction(
                          "the A_inf calibration band must lie below the evaluation window"))
             a_inf_kernel = verify_band_consistent_added_mass_infinite(
                 kernel, derived.derived_added_mass_infinite, derived.omegas,
-                derived.derived_added_mass)
+                derived.derived_added_mass, calibration_source=derived)
             a_inf_difference = a_inf_kernel - np.asarray(derived.derived_added_mass_infinite)
         return _full_block_report(criteria, window, a_rec, b_rec, a_ref, b_ref, a_inf_difference)
 

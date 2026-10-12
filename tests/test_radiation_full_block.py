@@ -227,3 +227,113 @@ def test_band_consistent_kernel_round_trip(tmp_path):
         rad.verify_band_consistent_added_mass_infinite(back, ds["added_mass_infinite"].values,
                                                       ds["omega"].values, ds["added_mass"].values),
         k.added_mass_infinite)
+
+
+def _paired_derived_kernels(**extra):
+    """Derived kernels at dt and 2 dt (same horizon), A_inf calibrated at dt."""
+    ds = make_oracle_dataset(omegas=OMEGAS)
+    der = ops.derived_operators_from_dataset(ds, make_settings())
+    C, lam, _ = _oracle_matrices(12)
+    zero = der.projection.T @ (C / lam) @ der.projection
+    fine = kernel_settings(zero_frequency_damping=zero, a_inf_calibration_dt=0.01, **BAND, **extra)
+    coarse = kernel_settings(zero_frequency_damping=zero, dt=0.02, n_time=(N_TIME - 1) // 2 + 1,
+                             a_inf_calibration_dt=0.01, **BAND, **extra)
+    return (ds, der, rad.radiation_kernel_from_derived_operators(der, coarse),
+            rad.radiation_kernel_from_derived_operators(der, fine))
+
+
+def test_separate_calibration_step_shares_one_a_inf_across_dt():
+    ds, der, coarse, fine = _paired_derived_kernels()
+    # Calibrated once on the fine grid: bit-identical A_inf for both time steps.
+    np.testing.assert_array_equal(coarse.added_mass_infinite, fine.added_mass_infinite)
+    own = rad.radiation_kernel_from_derived_operators(
+        der, dataclasses.replace(coarse.settings, a_inf_calibration_dt=None))
+    assert not np.array_equal(own.added_mass_infinite, fine.added_mass_infinite)
+    # Declaring the kernel's own step is the plain band-consistent kernel.
+    plain_fine = rad.radiation_kernel_from_derived_operators(
+        der, dataclasses.replace(fine.settings, a_inf_calibration_dt=None))
+    np.testing.assert_array_equal(plain_fine.added_mass_infinite, fine.added_mass_infinite)
+    np.testing.assert_array_equal(plain_fine.kernel, fine.kernel)
+    assert coarse.provenance["a_inf_calibration_dt"] == 0.01
+    assert any("rebuilt at dt=0.01" in a for a in coarse.assumptions)
+    # Both prove against their own derived artifact; the comparator passes it.
+    for k in (coarse, fine):
+        out = rad.verify_band_consistent_added_mass_infinite(
+            k, der.derived_added_mass_infinite, der.omegas, der.derived_added_mass,
+            calibration_source=der)
+        np.testing.assert_array_equal(out, fine.added_mass_infinite)
+    crit = rad.reconstruction_criteria_from_dict(FULL_BLOCK)
+    assert rad.compare_derived_reconstruction(coarse, der, crit, source_dataset=ds).overall_pass
+
+
+def test_separate_calibration_step_refusals(tmp_path):
+    ds, der, coarse, fine = _paired_derived_kernels()
+    args = (der.derived_added_mass_infinite, der.omegas, der.derived_added_mass)
+    with pytest.raises(rad.RadiationError, match="derived operator artifact"):
+        rad.verify_band_consistent_added_mass_infinite(coarse, *args)
+    # the kernel's own (dt) calibration is not the declared one
+    own = rad.radiation_kernel_from_derived_operators(
+        der, dataclasses.replace(coarse.settings, a_inf_calibration_dt=None))
+    swapped = dataclasses.replace(own, settings=coarse.settings,
+                                  provenance={**own.provenance, "a_inf_calibration_dt": 0.01})
+    with pytest.raises(rad.RadiationError):
+        rad.verify_band_consistent_added_mass_infinite(swapped, *args, calibration_source=der)
+    # a kernel without its recorded step is refused at construction (see
+    # test_separate_calibration_claims_need_a_derived_kernel); the verifier
+    # also checks the step for same-grid kernels
+    same = rad.radiation_kernel_from_derived_operators(
+        der, dataclasses.replace(fine.settings, a_inf_calibration_dt=None))
+    claimed = dataclasses.replace(same, provenance={**same.provenance, "a_inf_calibration_dt": 0.01})
+    with pytest.raises(rad.RadiationError, match="calibration step"):
+        rad.verify_band_consistent_added_mass_infinite(claimed, *args, calibration_source=der)
+    # settings: finer-or-equal step dividing the horizon, band-consistent only
+    base = coarse.settings
+    for bad in (dict(a_inf_calibration_dt=0.03), dict(a_inf_calibration_dt=0.0),
+                dict(a_inf_calibration_dt=0.0123), dict(a_inf_calibration_dt=True),
+                dict(a_inf_policy="computed", a_inf_calibration_min=None,
+                     a_inf_calibration_max=None, a_inf_calibration_dt=0.01)):
+        with pytest.raises(rad.RadiationSettingsError):
+            dataclasses.replace(base, **bad)
+    data = base.to_dict()
+    assert data["a_inf_calibration_dt"] == 0.01
+    assert rad.RadiationSettings.from_dict(data).to_dict() == data
+    assert "a_inf_calibration_dt" not in dataclasses.replace(base, a_inf_calibration_dt=None).to_dict()
+    # save/load keeps the declaration and the proof
+    rad.save_radiation_kernel(coarse, tmp_path / "coarse.nc")
+    back = rad.load_radiation_kernel(tmp_path / "coarse.nc")
+    assert back.content_hash() == coarse.content_hash()
+    rad.verify_band_consistent_added_mass_infinite(back, *args, calibration_source=der)
+
+
+def test_dataset_route_refuses_separate_calibration_step():
+    ds = make_oracle_dataset(omegas=OMEGAS)
+    settings = kernel_settings(dt=0.02, n_time=(N_TIME - 1) // 2 + 1, a_inf_calibration_dt=0.01, **BAND)
+    with pytest.raises(rad.RadiationSettingsError, match="derived-operator route"):
+        rad.radiation_kernel_from_dataset(ds, settings)
+    rad.radiation_kernel_from_dataset(ds, dataclasses.replace(settings, a_inf_calibration_dt=0.02))
+
+
+def test_separate_calibration_claims_need_a_derived_kernel(tmp_path):
+    ds = make_oracle_dataset(omegas=OMEGAS)
+    same = rad.radiation_kernel_from_dataset(ds, kernel_settings(**BAND))
+    claim = dataclasses.replace(same.settings, a_inf_calibration_dt=0.005)
+    with pytest.raises(rad.RadiationError, match="derived-operator kernel only"):
+        dataclasses.replace(same, settings=claim,
+                            provenance={**same.provenance, "a_inf_calibration_dt": 0.005})
+    _, der, coarse, _ = _paired_derived_kernels()
+    with pytest.raises(rad.RadiationError, match="recorded step"):
+        dataclasses.replace(coarse, provenance={k: v for k, v in coarse.provenance.items()
+                                                if k != "a_inf_calibration_dt"})
+    legacy = rad.ReconstructionCriteria(omega_min=0.5, omega_max=2.0, added_mass_abs_tol=1.0,
+                                        added_mass_rel_tol=0.1, damping_abs_tol=1.0, damping_rel_tol=0.1)
+    with pytest.raises(rad.RadiationError, match="derived-operator route only"):
+        rad.compare_reconstruction(coarse, ds, legacy)
+
+
+def test_overflowing_calibration_ratio_is_a_typed_refusal():
+    with pytest.raises(rad.RadiationSettingsError):
+        kernel_settings(dt=0.01, n_time=101, a_inf_calibration_dt=1e-320, **BAND)
+    data = kernel_settings(**BAND).to_dict()
+    data.update(n_time=101, a_inf_calibration_dt=1e-320)
+    with pytest.raises(rad.RadiationSettingsError):
+        rad.RadiationSettings.from_dict(data)
