@@ -152,6 +152,10 @@ def test_modal_error_is_relative_to_spectral_radius():
     assert rad._modal_error(rec, ref, 1e-3, 0.01) == pytest.approx(0.02)
     rec2 = np.diag([100.0, 100.0, 10.3, 0.0])          # 0.3 on a small mode: 0.3 % of rho
     assert rad._modal_error(rec2, ref, 1e-3, 0.01) == pytest.approx(0.003)
+    # subdominant cluster: spectral norm 0.3 over rho 100, not over the cluster's 10
+    ref3 = np.diag([100.0, 10.0, 10.0, 1.0])
+    rec3 = np.diag([100.0, 10.3, 10.0, 1.0])
+    assert rad._modal_error(rec3, ref3, 1e-3, 0.01) == pytest.approx(0.003)
     crit = rad.reconstruction_criteria_from_dict(FULL_BLOCK)
     assert crit.to_dict()["modal_reference"] == "spectral_radius"
     assert rad.reconstruction_criteria_from_dict(crit.to_dict()) == crit
