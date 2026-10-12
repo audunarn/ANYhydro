@@ -73,6 +73,15 @@ QUADRATURE_FREQUENCY_TRAPEZOID = "frequency_trapezoid"
 QUADRATURE_PIECEWISE_LINEAR = "piecewise_linear_exact"
 QUADRATURE_METHODS = (QUADRATURE_FREQUENCY_TRAPEZOID, QUADRATURE_PIECEWISE_LINEAR)
 
+HIGH_TAIL_TRUNCATE = "truncate"
+HIGH_TAIL_POWER_LAW = "power_law_extension"
+HIGH_TAIL_POLICIES = (HIGH_TAIL_TRUNCATE, HIGH_TAIL_POWER_LAW)
+#: geometric ratio between consecutive power-law tail samples (linear
+#: interpolation error of nu^-n is about n(n+1)(r-1)^2/8 relative)
+HIGH_TAIL_RATIO = 1.01
+#: allocation bound on the number of geometric tail samples
+MAX_HIGH_TAIL_SAMPLES = 20000
+
 ARTIFACT_QUALIFICATION_STATUS = "unqualified"
 
 
@@ -231,6 +240,7 @@ SETTINGS_SERIALIZED_KEYS = frozenset({
     "dt", "n_time", "symmetry_tol", "passivity_tol", "low_tail_policy",
     "zero_frequency_damping", "extension_name", "time_window",
     "execution_limits", "quadrature_method",
+    "high_tail_policy", "high_tail_exponent", "high_tail_upper", "high_tail_name",
 })
 
 
@@ -272,6 +282,10 @@ class RadiationSettings:
     time_window: Optional[float] = None
     execution_limits: Optional[RadiationExecutionLimits] = None
     quadrature_method: str = QUADRATURE_FREQUENCY_TRAPEZOID
+    high_tail_policy: str = HIGH_TAIL_TRUNCATE
+    high_tail_exponent: Optional[float] = None
+    high_tail_upper: Optional[float] = None
+    high_tail_name: Optional[str] = None
 
     def __post_init__(self) -> None:
         try:
@@ -342,6 +356,41 @@ class RadiationSettings:
                          "via extension_name (recorded as an assumption)"))
             object.__setattr__(self, "extension_name", str(name))
 
+        high = str(self.high_tail_policy)
+        _require(high in HIGH_TAIL_POLICIES,
+                 RadiationSettingsError(
+                     f"high_tail_policy must be one of {HIGH_TAIL_POLICIES}, got {high!r}"))
+        object.__setattr__(self, "high_tail_policy", high)
+        if high == HIGH_TAIL_TRUNCATE:
+            _require(self.high_tail_exponent is None and self.high_tail_upper is None
+                     and self.high_tail_name is None,
+                     RadiationSettingsError(
+                         "high_tail_exponent/upper/name are only valid with the "
+                         "power-law high-tail extension"))
+        else:
+            _require(self.quadrature_method == QUADRATURE_PIECEWISE_LINEAR,
+                     RadiationSettingsError(
+                         "the power-law high tail requires quadrature_method="
+                         f"{QUADRATURE_PIECEWISE_LINEAR!r} (exact on the oscillatory tail)"))
+            try:
+                exponent = float(self.high_tail_exponent)
+                upper = float(self.high_tail_upper)
+            except (TypeError, ValueError) as exc:
+                raise RadiationSettingsError(
+                    f"power-law high tail needs numeric exponent and upper: {exc}") from exc
+            _require(np.isfinite(exponent) and exponent > 1.0,
+                     RadiationSettingsError("high_tail_exponent must be finite and > 1"))
+            _require(np.isfinite(upper) and upper > 0.0,
+                     RadiationSettingsError("high_tail_upper must be finite and > 0"))
+            name = self.high_tail_name
+            _require(isinstance(name, str) and name.strip(),
+                     RadiationSettingsError(
+                         "the power-law high tail must be named via high_tail_name "
+                         "(recorded as an assumption)"))
+            object.__setattr__(self, "high_tail_exponent", exponent)
+            object.__setattr__(self, "high_tail_upper", upper)
+            object.__setattr__(self, "high_tail_name", str(name))
+
         if self.time_window is not None:
             try:
                 window = float(self.time_window)
@@ -376,6 +425,12 @@ class RadiationSettings:
         # Legacy default preserves the exact serialized keys and artifact hashes.
         if self.quadrature_method != QUADRATURE_FREQUENCY_TRAPEZOID:
             data["quadrature_method"] = self.quadrature_method
+        # Default truncation keeps the exact old serialized form and hashes.
+        if self.high_tail_policy != HIGH_TAIL_TRUNCATE:
+            data["high_tail_policy"] = self.high_tail_policy
+            data["high_tail_exponent"] = float(self.high_tail_exponent)
+            data["high_tail_upper"] = float(self.high_tail_upper)
+            data["high_tail_name"] = self.high_tail_name
         return data
 
     @classmethod
@@ -419,6 +474,10 @@ class RadiationSettings:
                 time_window=data["time_window"],
                 execution_limits=execution_limits,
                 quadrature_method=data.get("quadrature_method", QUADRATURE_FREQUENCY_TRAPEZOID),
+                high_tail_policy=data.get("high_tail_policy", HIGH_TAIL_TRUNCATE),
+                high_tail_exponent=data.get("high_tail_exponent"),
+                high_tail_upper=data.get("high_tail_upper"),
+                high_tail_name=data.get("high_tail_name"),
             )
         except KeyError as exc:
             raise RadiationSettingsError(
@@ -925,6 +984,27 @@ def _kernel_from_arrays(
 
     omega_ext = np.concatenate(([0.0], omegas))
     b_ext = np.concatenate((b0[None, :, :], damping), axis=0)
+    omega_max = float(omegas[-1])
+    if settings.high_tail_policy == HIGH_TAIL_POWER_LAW:
+        _require(settings.high_tail_upper > omega_max,
+                 RadiationSettingsError(
+                     f"high_tail_upper {settings.high_tail_upper} must exceed the last "
+                     f"grid frequency {omega_max}"))
+        # the kernel is sampled at dt: integrated bandwidth stays below Nyquist
+        _require(settings.high_tail_upper * settings.dt <= np.pi,
+                 RadiationSettingsError(
+                     f"high_tail_upper*dt = {settings.high_tail_upper * settings.dt:.6g} "
+                     "exceeds pi: the declared tail would integrate above the kernel's "
+                     "Nyquist frequency"))
+        span = np.log(settings.high_tail_upper) - np.log(omega_max)
+        n_tail = int(np.ceil(span / np.log(HIGH_TAIL_RATIO)))
+        _require(n_tail <= MAX_HIGH_TAIL_SAMPLES,
+                 RadiationLimitError(
+                     f"power-law tail needs {n_tail} samples > {MAX_HIGH_TAIL_SAMPLES}"))
+        nu = np.geomspace(omega_max, settings.high_tail_upper, n_tail + 1)[1:]
+        factor = (omega_max / nu) ** settings.high_tail_exponent
+        omega_ext = np.concatenate((omega_ext, nu))
+        b_ext = np.concatenate((b_ext, factor[:, None, None] * damping[-1][None, :, :]), axis=0)
     _require(bool(np.all(np.isfinite(b_ext))),
              RadiationError("extended damping data contains non-finite values; refusing"))
 
@@ -948,10 +1028,10 @@ def _kernel_from_arrays(
     # --- diagnostics: high tail, symmetry, passivity (errors preserved, never clamped)
     damping_at_omega_max = damping[-1]
     max_spacing = float(np.max(np.diff(omega_ext)))
-    omega_max = float(omegas[-1])
     kernel_duration = settings.kernel_duration
 
-    asym_damping = np.abs(b_ext - np.transpose(b_ext, (0, 2, 1)))
+    asym_damping = np.abs(b_ext[:omegas.size + 1]
+                          - np.transpose(b_ext[:omegas.size + 1], (0, 2, 1)))
     asym_added = np.abs(added_mass - np.transpose(added_mass, (0, 2, 1)))
     iu, ju = np.triu_indices(n_dof, k=1)
     damping_asym_per_pair = asym_damping[:, iu, ju].max(axis=0) if iu.size else np.zeros(0)
@@ -959,12 +1039,15 @@ def _kernel_from_arrays(
     damping_sym_violations = int(np.count_nonzero(damping_asym_per_pair > settings.symmetry_tol))
     added_sym_violations = int(np.count_nonzero(added_asym_per_pair > settings.symmetry_tol))
 
-    sym_damping = 0.5 * (b_ext + np.transpose(b_ext, (0, 2, 1)))
+    # diagnostics over the source grid plus the declared low tail only (the
+    # power-law tail is a positive multiple of B(omega_max))
+    b_diag = b_ext[:omegas.size + 1]
+    sym_damping = 0.5 * (b_diag + np.transpose(b_diag, (0, 2, 1)))
     min_eigs = np.array([np.linalg.eigvalsh(sym_damping[k]).min() for k in range(sym_damping.shape[0])])
     passivity_violations = int(np.count_nonzero(min_eigs < -settings.passivity_tol))
 
     diagnostics = RadiationDiagnostics(
-        frequency_grid=omega_ext,
+        frequency_grid=omega_ext[:omegas.size + 1],
         zero_frequency_damping=b0,
         damping_at_omega_max=damping_at_omega_max,
         omega_max=omega_max,
@@ -981,15 +1064,28 @@ def _kernel_from_arrays(
         passivity_violations=passivity_violations,
     )
 
+    if settings.high_tail_policy == HIGH_TAIL_POWER_LAW:
+        high_tail_assumption = (
+            f"high_tail_policy=power_law_extension: named extension "
+            f"{settings.high_tail_name!r} continues B(nu) = B(omega_max)*(omega_max/nu)"
+            f"^{settings.high_tail_exponent:.17g} from omega_max={omega_max:.17g} to "
+            f"{settings.high_tail_upper:.17g} rad/s (geometric samples, ratio "
+            f"{HIGH_TAIL_RATIO}), truncated beyond; integrated bandwidth "
+            f"high_tail_upper*dt={settings.high_tail_upper * settings.dt:.17g} <= pi "
+            f"(source omega_max*dt in the diagnostics); recorded assumption, not solver data")
+    else:
+        high_tail_assumption = (
+            f"high_tail_truncated_at_omega_max={omega_max:.17g}: B is explicitly truncated "
+            f"at the last grid frequency; no extrapolation, fitting or symmetrization")
     assumptions = [
         low_tail_assumption,
-        f"high_tail_truncated_at_omega_max={omega_max:.17g}: B is explicitly truncated "
-        f"at the last grid frequency; no extrapolation, fitting or symmetrization",
+        high_tail_assumption,
         f"time_window={'none' if settings.time_window is None else repr(float(settings.time_window))}",
         "kernel_artifact_unqualified: development artifact; cannot inherit qualified "
         "status from the source dataset",
     ]
-    if settings.quadrature_method == QUADRATURE_PIECEWISE_LINEAR:
+    if (settings.quadrature_method == QUADRATURE_PIECEWISE_LINEAR
+            and settings.high_tail_policy == HIGH_TAIL_TRUNCATE):
         assumptions.append(
             "quadrature_method=piecewise_linear_exact: exact cosine integral of the "
             "componentwise linear damping interpolant, including the declared low tail; "
@@ -997,6 +1093,15 @@ def _kernel_from_arrays(
             "and finite-time/discrete radiation passivity are not established. "
             "duration_over_spacing_period is a legacy spacing indicator, not an "
             "alias recurrence criterion for this method."
+        )
+    elif settings.quadrature_method == QUADRATURE_PIECEWISE_LINEAR:
+        assumptions.append(
+            "quadrature_method=piecewise_linear_exact: exact cosine integral of the "
+            "componentwise linear damping interpolant, including the declared low tail "
+            "and the declared power-law high tail up to high_tail_upper (truncated "
+            "there). Interpolation/source/tail adequacy and finite-time/discrete "
+            "radiation passivity are not established. duration_over_spacing_period "
+            "is a legacy spacing indicator, not an alias recurrence criterion."
         )
     assumptions.extend(str(a) for a in extra_assumptions)
     if settings.execution_limits is not None:

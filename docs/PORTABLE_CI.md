@@ -77,6 +77,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_persistence | persistence round trips |
 | test_portable_ci_contract | this selection contract |
 | test_radiation | radiation kernels and admission |
+| test_radiation_high_tail | declared power-law high-frequency kernel tail |
 | test_radiation_long_kernel | long radiation kernel quadrature |
 | test_radiation_oscillatory | oscillatory radiation quadrature |
 | test_radiation_parent_review | radiation parent review contracts |

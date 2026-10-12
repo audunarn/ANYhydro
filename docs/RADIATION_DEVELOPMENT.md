@@ -58,6 +58,21 @@ validated neutral dataset (validate_for_time_domain: explicit A_inf + source)
   - `"linear_to_zero_extension"`: requires a separately named
     `extension_name`; extends B linearly from the first grid frequency to
     `B(0) = 0`, recorded as an assumption.
+- `high_tail_policy`:
+  - `"truncate"` (default): B is zero above the last grid frequency
+    (exact old serialized settings and hashes).
+  - `"power_law_extension"`: requires `quadrature_method=
+    "piecewise_linear_exact"`, a finite `high_tail_exponent > 1`, an
+    `high_tail_upper` above the grid and a separately named
+    `high_tail_name`. B continues as `B(omega_max) (omega_max/nu)^n` on
+    geometric samples (ratio 1.01) up to `high_tail_upper`, zero beyond,
+    recorded as an assumption. It is a positive multiple of B(omega_max),
+    so symmetry and PSD are inherited. Truncation at a frequency where B is
+    still large leaves an added-mass offset of about
+    `(2/pi) int_{omega_max}^inf B(nu)/nu^2 dnu` (W5 evidence
+    `w5-physical-20261012b`); the declared tail removes it for the
+    coefficients that follow a power law. Oscillating inter-body coupling
+    terms are not power laws; tail adequacy stays a separately assessed gate.
 - `symmetry_tol`, `passivity_tol`: explicit validation tolerances. There is
   no blanket scientific default.
 - `execution_limits`: optional frozen public `RadiationExecutionLimits`
@@ -78,8 +93,11 @@ validated neutral dataset (validate_for_time_domain: explicit A_inf + source)
 
 Deterministic trapezoidal quadrature throughout. The frequency grid is the
 dataset's finite strictly increasing grid (>= 3 samples) extended by the
-explicit zero-frequency sample; the high tail is **explicitly truncated at
-`omega_max`** — no fitting, extrapolation, symmetrization or clamping.
+explicit zero-frequency sample. By default the high tail is **explicitly
+truncated at `omega_max`**; with `high_tail_policy="power_law_extension"` the
+declared tail is appended up to `high_tail_upper` (which must satisfy
+`high_tail_upper*dt <= pi`) and truncated there. There is no fitting,
+symmetrization or clamping.
 NaN/Inf anywhere and a missing `A_inf` are typed refusals.
 
 ## Diagnostics (`RadiationDiagnostics`, errors preserved, never clamped)
@@ -126,7 +144,7 @@ status, schema version and backend. (The source dataset's `created_utc` is
 deliberately not copied: the content hash already binds the artifact to the
 dataset identity, and excluding the timestamp keeps artifact reproduction
 deterministic across processes.) Assumptions
-record the low-tail policy, the `omega_max` truncation, the time window and
+record the low-tail policy, the high-tail truncation or declared extension, the time window and
 the non-inheritance of qualification. `qualification_status` is always
 `"unqualified"`: kernel artifacts cannot inherit qualified status from a
 source dataset.

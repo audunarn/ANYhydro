@@ -62,6 +62,7 @@ PORTABLE_TEST_MODULES = (
     "test_portable_ci_contract",
     "test_prony_fit",
     "test_radiation",
+    "test_radiation_high_tail",
     "test_radiation_long_kernel",
     "test_radiation_oscillatory",
     "test_radiation_parent_review",
