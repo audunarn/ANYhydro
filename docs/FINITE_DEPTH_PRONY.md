@@ -53,8 +53,13 @@ Evidence (C:/ANYworkspaceWork/anymarine-evidence/w5-prony-attribution-20261012):
 The remaining lid floor (~0.09) is the centroid/Gauss mixing term.
 
 Impact on BEM coefficients (10 x 5 x 2 m box, h = 150 m, omega 0.3–2.0):
-added mass and damping change by 1e-4 to 2e-3 relative. This repairs a real
-accuracy defect but is too small to explain a large coupled energy gap.
+added mass and damping change by 1e-4 to 2e-3 relative. Near/far energy
+consistency (far-field Kochin flux over near-field damping) of the same box
+moves by at most 2e-3 (heave, omega = 2) and typically 1e-5 to 1e-4 between a
+deterministic upstream 4-term fit and the validated fit: the fit-error field is
+non-radiating and mainly affects added mass. This repairs a real accuracy
+defect but does not explain the 1.35–2.15 % energetic-mode near/far gaps of the
+retained W5 coupled point 03c, which therefore have another cause.
 
 ## Known limits
 
