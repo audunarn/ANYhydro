@@ -81,6 +81,12 @@ HIGH_TAIL_POLICIES = (HIGH_TAIL_TRUNCATE, HIGH_TAIL_POWER_LAW)
 HIGH_TAIL_RATIO = 1.01
 #: allocation bound on the number of geometric tail samples
 MAX_HIGH_TAIL_SAMPLES = 20000
+HIGH_TAIL_SCOPE_FULL = "full"
+HIGH_TAIL_SCOPE_BODY_DIAGONAL = "body_diagonal"
+HIGH_TAIL_SCOPES = (HIGH_TAIL_SCOPE_FULL, HIGH_TAIL_SCOPE_BODY_DIAGONAL)
+A_INF_COMPUTED = "computed"
+A_INF_BAND_CONSISTENT = "band_consistent"
+A_INF_POLICIES = (A_INF_COMPUTED, A_INF_BAND_CONSISTENT)
 
 ARTIFACT_QUALIFICATION_STATUS = "unqualified"
 
@@ -241,6 +247,7 @@ SETTINGS_SERIALIZED_KEYS = frozenset({
     "zero_frequency_damping", "extension_name", "time_window",
     "execution_limits", "quadrature_method",
     "high_tail_policy", "high_tail_exponent", "high_tail_upper", "high_tail_name",
+    "high_tail_scope", "a_inf_policy", "a_inf_calibration_min", "a_inf_calibration_max",
 })
 
 
@@ -286,6 +293,10 @@ class RadiationSettings:
     high_tail_exponent: Optional[float] = None
     high_tail_upper: Optional[float] = None
     high_tail_name: Optional[str] = None
+    high_tail_scope: str = HIGH_TAIL_SCOPE_FULL
+    a_inf_policy: str = A_INF_COMPUTED
+    a_inf_calibration_min: Optional[float] = None
+    a_inf_calibration_max: Optional[float] = None
 
     def __post_init__(self) -> None:
         try:
@@ -390,6 +401,32 @@ class RadiationSettings:
             object.__setattr__(self, "high_tail_exponent", exponent)
             object.__setattr__(self, "high_tail_upper", upper)
             object.__setattr__(self, "high_tail_name", str(name))
+        scope = str(self.high_tail_scope)
+        _require(scope in HIGH_TAIL_SCOPES,
+                 RadiationSettingsError(f"high_tail_scope must be one of {HIGH_TAIL_SCOPES}"))
+        _require(scope == HIGH_TAIL_SCOPE_FULL or high == HIGH_TAIL_POWER_LAW,
+                 RadiationSettingsError("high_tail_scope applies to the power-law tail only"))
+        object.__setattr__(self, "high_tail_scope", scope)
+
+        a_policy = str(self.a_inf_policy)
+        _require(a_policy in A_INF_POLICIES,
+                 RadiationSettingsError(f"a_inf_policy must be one of {A_INF_POLICIES}"))
+        object.__setattr__(self, "a_inf_policy", a_policy)
+        if a_policy == A_INF_COMPUTED:
+            _require(self.a_inf_calibration_min is None and self.a_inf_calibration_max is None,
+                     RadiationSettingsError(
+                         "a_inf calibration band is only valid with a_inf_policy='band_consistent'"))
+        else:
+            try:
+                lo = float(self.a_inf_calibration_min)
+                hi = float(self.a_inf_calibration_max)
+            except (TypeError, ValueError) as exc:
+                raise RadiationSettingsError(
+                    f"band-consistent A_inf needs a numeric calibration band: {exc}") from exc
+            _require(np.isfinite(lo) and np.isfinite(hi) and 0.0 < lo < hi,
+                     RadiationSettingsError("calibration band must satisfy 0 < min < max"))
+            object.__setattr__(self, "a_inf_calibration_min", lo)
+            object.__setattr__(self, "a_inf_calibration_max", hi)
 
         if self.time_window is not None:
             try:
@@ -431,6 +468,12 @@ class RadiationSettings:
             data["high_tail_exponent"] = float(self.high_tail_exponent)
             data["high_tail_upper"] = float(self.high_tail_upper)
             data["high_tail_name"] = self.high_tail_name
+        if self.high_tail_scope != HIGH_TAIL_SCOPE_FULL:
+            data["high_tail_scope"] = self.high_tail_scope
+        if self.a_inf_policy != A_INF_COMPUTED:
+            data["a_inf_policy"] = self.a_inf_policy
+            data["a_inf_calibration_min"] = float(self.a_inf_calibration_min)
+            data["a_inf_calibration_max"] = float(self.a_inf_calibration_max)
         return data
 
     @classmethod
@@ -478,6 +521,10 @@ class RadiationSettings:
                 high_tail_exponent=data.get("high_tail_exponent"),
                 high_tail_upper=data.get("high_tail_upper"),
                 high_tail_name=data.get("high_tail_name"),
+                high_tail_scope=data.get("high_tail_scope", HIGH_TAIL_SCOPE_FULL),
+                a_inf_policy=data.get("a_inf_policy", A_INF_COMPUTED),
+                a_inf_calibration_min=data.get("a_inf_calibration_min"),
+                a_inf_calibration_max=data.get("a_inf_calibration_max"),
             )
         except KeyError as exc:
             raise RadiationSettingsError(
@@ -536,6 +583,240 @@ class ReconstructionCriteria:
             "damping_abs_tol": self.damping_abs_tol,
             "damping_rel_tol": self.damping_rel_tol,
         }
+
+
+@dataclass(frozen=True)
+class FullBlockReconstructionCriteria:
+    """W5 K1-K2 reconstruction criteria (adopted 2026-10-12), per window frequency.
+
+    K1: ||Z_rec - Z||_F, ||A_rec - A||_F, ||B_rec - B||_F each within
+    ``block_rel_tol`` of the reference norm (Z = B + i omega A).
+    K2: for A and B, energetic modes of S(X) (eigenvalue >= energetic_fraction
+    times the largest; clusters closer than cluster_fraction use the spectral
+    norm of V^T (S(X_rec) - S(X)) V over the cluster minimum) within
+    ``modal_rel_tol``. Per-coefficient errors are reported only (K3).
+    """
+
+    omega_min: float
+    omega_max: float
+    block_rel_tol: float
+    modal_rel_tol: float
+    energetic_fraction: float
+    cluster_fraction: float
+
+    FORM = "full_block"
+
+    def __post_init__(self) -> None:
+        for name in ("omega_min", "omega_max", "block_rel_tol", "modal_rel_tol",
+                     "energetic_fraction", "cluster_fraction"):
+            try:
+                value = float(getattr(self, name))
+            except (TypeError, ValueError) as exc:
+                raise ReconstructionCriteriaError(f"{name} must be a float: {exc}") from exc
+            _require(np.isfinite(value) and value > 0.0,
+                     ReconstructionCriteriaError(f"{name} must be finite and > 0"))
+            object.__setattr__(self, name, value)
+        _require(self.omega_min <= self.omega_max,
+                 ReconstructionCriteriaError("omega_min must be <= omega_max"))
+        _require(self.energetic_fraction < 1.0 and self.cluster_fraction < 1.0,
+                 ReconstructionCriteriaError("fractions must be below 1"))
+
+    def to_dict(self) -> dict:
+        return {"form": self.FORM, "omega_min": self.omega_min, "omega_max": self.omega_max,
+                "block_rel_tol": self.block_rel_tol, "modal_rel_tol": self.modal_rel_tol,
+                "energetic_fraction": self.energetic_fraction,
+                "cluster_fraction": self.cluster_fraction}
+
+
+def reconstruction_criteria_from_dict(data: Mapping[str, Any]):
+    """Per-coefficient criteria (legacy form) or ``form='full_block'`` criteria."""
+    if not isinstance(data, Mapping):
+        raise ReconstructionCriteriaError("criteria must be a mapping")
+    fields = dict(data)
+    form = fields.pop("form", None)
+    try:
+        if form == FullBlockReconstructionCriteria.FORM:
+            return FullBlockReconstructionCriteria(**fields)
+        _require(form is None, ReconstructionCriteriaError(f"unknown criteria form {form!r}"))
+        return ReconstructionCriteria(**fields)
+    except TypeError as exc:
+        raise ReconstructionCriteriaError(f"invalid reconstruction criteria: {exc}") from exc
+
+
+def _energetic_groups(lam, fraction, cluster):
+    groups, current = [], []
+    for k in np.flatnonzero(lam >= fraction * lam[0]):
+        if current and (lam[current[-1]] - lam[k]) >= cluster * lam[current[-1]]:
+            groups.append(current)
+            current = []
+        current.append(int(k))
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _rel_norm(diff, ref):
+    """||diff||/||ref||; 0 when both vanish, inf when only ref vanishes."""
+    d, r = float(np.linalg.norm(diff)), float(np.linalg.norm(ref))
+    if r == 0.0:
+        return 0.0 if d == 0.0 else np.inf
+    return d / r
+
+
+def _weak_modes(rec, ref, fraction):
+    """K3 report: weak eigenvalues of S(ref) and the reconstructed Rayleigh values."""
+    sr = 0.5 * (ref + ref.T)
+    sc = 0.5 * (rec + rec.T)
+    lam, vec = np.linalg.eigh(sr)
+    top = float(np.max(lam))
+    out = []
+    for k in range(lam.size):
+        if top > 0.0 and lam[k] >= fraction * top:
+            continue
+        out.append([float(lam[k]), float(vec[:, k] @ sc @ vec[:, k])])
+    return out
+
+
+def _modal_error(rec, ref, fraction, cluster):
+    """Largest K2 relative error over the energetic modes of S(ref).
+
+    A reference without a positive eigenvalue has no energetic mode (0).
+    """
+    sr = 0.5 * (ref + ref.T)
+    sc = 0.5 * (rec + rec.T)
+    lam, vec = np.linalg.eigh(sr)
+    order = np.argsort(lam)[::-1]
+    lam, vec = lam[order], vec[:, order]
+    if not lam[0] > 0.0:
+        return 0.0
+    worst = 0.0
+    for g in _energetic_groups(lam, fraction, cluster):
+        V = vec[:, g]
+        if len(g) == 1:
+            err = abs(float(V[:, 0] @ sc @ V[:, 0]) - lam[g[0]]) / lam[g[0]]
+        else:
+            err = float(np.linalg.norm(V.T @ (sc - sr) @ V, 2) / np.min(lam[g]))
+        worst = max(worst, err)
+    return worst
+
+
+@dataclass(frozen=True)
+class FullBlockReconstructionReport:
+    """K1/K2 results per window frequency plus K3 reported quantities."""
+
+    criteria: FullBlockReconstructionCriteria
+    window_omegas: np.ndarray
+    impedance_rel_error: np.ndarray
+    added_mass_rel_error: np.ndarray
+    damping_rel_error: np.ndarray
+    added_mass_modal_error: np.ndarray
+    damping_modal_error: np.ndarray
+    added_mass_coefficient_error: np.ndarray
+    damping_coefficient_error: np.ndarray
+    a_inf_difference: Optional[np.ndarray] = None
+    #: K3: per window frequency, [reference weak eigenvalue, reconstructed Rayleigh]
+    added_mass_weak_modes: tuple = ()
+    damping_weak_modes: tuple = ()
+
+    @property
+    def block_pass(self) -> bool:
+        tol = self.criteria.block_rel_tol
+        return bool(np.all(self.impedance_rel_error <= tol)
+                    and np.all(self.added_mass_rel_error <= tol)
+                    and np.all(self.damping_rel_error <= tol))
+
+    @property
+    def modal_pass(self) -> bool:
+        tol = self.criteria.modal_rel_tol
+        return bool(np.all(self.added_mass_modal_error <= tol)
+                    and np.all(self.damping_modal_error <= tol))
+
+    @property
+    def overall_pass(self) -> bool:
+        return self.block_pass and self.modal_pass
+
+    def summary(self) -> dict:
+        return {
+            "criteria": self.criteria.to_dict(),
+            "n_window_frequencies": int(self.window_omegas.size),
+            "window_omega_range": [float(self.window_omegas[0]), float(self.window_omegas[-1])],
+            "overall_pass": self.overall_pass,
+            "block_pass": self.block_pass,
+            "modal_pass": self.modal_pass,
+            "max_impedance_rel_error": float(np.max(self.impedance_rel_error)),
+            "max_added_mass_error": float(np.max(self.added_mass_rel_error)),
+            "max_damping_error": float(np.max(self.damping_rel_error)),
+            "max_added_mass_modal_error": float(np.max(self.added_mass_modal_error)),
+            "max_damping_modal_error": float(np.max(self.damping_modal_error)),
+            "reported_max_added_mass_coefficient_error":
+                float(np.max(self.added_mass_coefficient_error)),
+            "reported_max_damping_coefficient_error":
+                float(np.max(self.damping_coefficient_error)),
+            "reported_a_inf_difference": None if self.a_inf_difference is None
+            else np.asarray(self.a_inf_difference).tolist(),
+            "reported_added_mass_weak_modes": [[list(x) for x in f] for f in self.added_mass_weak_modes],
+            "reported_damping_weak_modes": [[list(x) for x in f] for f in self.damping_weak_modes],
+        }
+
+
+def _full_block_report(criteria, window, a_rec, b_rec, a_ref, b_ref, a_inf_difference):
+    z_err, a_err, b_err, am, bm, aw, bw = [], [], [], [], [], [], []
+    for i, w in enumerate(window):
+        z_ref = b_ref[i] + 1j * w * a_ref[i]
+        z_rec = b_rec[i] + 1j * w * a_rec[i]
+        z_err.append(_rel_norm(z_rec - z_ref, z_ref))
+        a_err.append(_rel_norm(a_rec[i] - a_ref[i], a_ref[i]))
+        b_err.append(_rel_norm(b_rec[i] - b_ref[i], b_ref[i]))
+        am.append(_modal_error(a_rec[i], a_ref[i], criteria.energetic_fraction, criteria.cluster_fraction))
+        bm.append(_modal_error(b_rec[i], b_ref[i], criteria.energetic_fraction, criteria.cluster_fraction))
+        aw.append(_weak_modes(a_rec[i], a_ref[i], criteria.energetic_fraction))
+        bw.append(_weak_modes(b_rec[i], b_ref[i], criteria.energetic_fraction))
+    return FullBlockReconstructionReport(
+        criteria=criteria, window_omegas=np.asarray(window),
+        impedance_rel_error=np.asarray(z_err), added_mass_rel_error=np.asarray(a_err),
+        damping_rel_error=np.asarray(b_err), added_mass_modal_error=np.asarray(am),
+        damping_modal_error=np.asarray(bm),
+        added_mass_coefficient_error=np.max(np.abs(a_rec - a_ref), axis=0),
+        damping_coefficient_error=np.max(np.abs(b_rec - b_ref), axis=0),
+        a_inf_difference=a_inf_difference,
+        added_mass_weak_modes=tuple(tuple(tuple(x) for x in f) for f in aw),
+        damping_weak_modes=tuple(tuple(tuple(x) for x in f) for f in bw))
+
+
+def verify_band_consistent_added_mass_infinite(kernel, computed_a_inf, omegas, added_mass,
+                                               rel_tol: float = 1e-9) -> np.ndarray:
+    """Prove a kernel's band-consistent A_inf; return the kernel A_inf.
+
+    Requires ``a_inf_policy='band_consistent'``, the recorded computed A_inf
+    equal to ``computed_a_inf`` exactly, and the kernel's own A_inf to make
+    the mean of (A - A_rec) over the recorded calibration frequencies vanish
+    (to ``rel_tol`` of max|A|), with those frequencies drawn from ``omegas``.
+    """
+    _require(kernel.settings.a_inf_policy == A_INF_BAND_CONSISTENT,
+             RadiationError("kernel does not declare a band-consistent A_inf"))
+    prov = kernel.provenance
+    recorded = np.asarray(prov.get("a_inf_computed"), dtype=np.float64)
+    _require(recorded.shape == np.shape(computed_a_inf)
+             and bool(np.array_equal(recorded, np.asarray(computed_a_inf, dtype=np.float64))),
+             RadiationError("recorded computed A_inf does not match the source A_inf"))
+    cal = np.asarray(prov.get("a_inf_calibration_omegas"), dtype=np.float64)
+    om = np.asarray(omegas, dtype=np.float64)
+    st = kernel.settings
+    selection = (om >= st.a_inf_calibration_min) & (om <= st.a_inf_calibration_max)
+    _require(cal.ndim == 1 and cal.size >= 2 and bool(np.array_equal(cal, om[selection])),
+             RadiationError("recorded calibration frequencies are not exactly the source "
+                            "frequencies inside the declared calibration band"))
+    idx = np.flatnonzero(selection)
+    delta = np.asarray(prov.get("a_inf_band_consistent_delta"), dtype=np.float64)
+    _require(delta.shape == recorded.shape
+             and bool(np.array_equal(recorded + delta, np.asarray(kernel.added_mass_infinite))),
+             RadiationError("recorded A_inf difference does not reproduce the kernel A_inf"))
+    a_rec, _ = kernel.reconstruct(cal)
+    residual = np.mean(np.asarray(added_mass)[idx] - a_rec, axis=0)
+    scale = float(np.max(np.abs(np.asarray(added_mass)[idx])))
+    _require(float(np.max(np.abs(residual))) <= rel_tol * scale,
+             RadiationError("kernel A_inf is not band-consistent over its calibration band"))
+    return np.asarray(kernel.added_mass_infinite)
 
 
 @dataclass(frozen=True)
@@ -937,6 +1218,15 @@ def _piecewise_linear_cosine_integral(omega, damping, time):
     return result.reshape((time.size,) + damping.shape[1:])
 
 
+def _reconstruct_added_mass(time, kernel, a_inf, omegas):
+    """A_rec(w) = A_inf - (1/w) int K(t) sin(w t) dt (trapezoid in t), w > 0."""
+    w = np.asarray(omegas, dtype=np.float64)
+    n_dof = a_inf.shape[0]
+    weighted = _trapezoid_weights(time)[:, None] * kernel.reshape(time.size, n_dof * n_dof)
+    a_int = np.sin(np.outer(w, time)) @ weighted
+    return (a_inf.reshape(n_dof * n_dof)[None, :] - a_int / w[:, None]).reshape(w.size, n_dof, n_dof)
+
+
 def _kernel_from_arrays(
     *,
     omegas,
@@ -1003,8 +1293,16 @@ def _kernel_from_arrays(
                      f"power-law tail needs {n_tail} samples > {MAX_HIGH_TAIL_SAMPLES}"))
         nu = np.geomspace(omega_max, settings.high_tail_upper, n_tail + 1)[1:]
         factor = (omega_max / nu) ** settings.high_tail_exponent
+        tail_matrix = damping[-1]
+        if settings.high_tail_scope == HIGH_TAIL_SCOPE_BODY_DIAGONAL:
+            # each body's own block continues; inter-body coupling (oscillating
+            # in omega, not a power law) is truncated. A principal block of a
+            # PSD matrix is PSD, so passivity is inherited.
+            owner = [parse_dof_key(key)[0] for key in dof_keys]
+            same = np.array([[a == b for b in owner] for a in owner])
+            tail_matrix = np.where(same, tail_matrix, 0.0)
         omega_ext = np.concatenate((omega_ext, nu))
-        b_ext = np.concatenate((b_ext, factor[:, None, None] * damping[-1][None, :, :]), axis=0)
+        b_ext = np.concatenate((b_ext, factor[:, None, None] * tail_matrix[None, :, :]), axis=0)
     _require(bool(np.all(np.isfinite(b_ext))),
              RadiationError("extended damping data contains non-finite values; refusing"))
 
@@ -1070,7 +1368,7 @@ def _kernel_from_arrays(
             f"{settings.high_tail_name!r} continues B(nu) = B(omega_max)*(omega_max/nu)"
             f"^{settings.high_tail_exponent:.17g} from omega_max={omega_max:.17g} to "
             f"{settings.high_tail_upper:.17g} rad/s (geometric samples, ratio "
-            f"{HIGH_TAIL_RATIO}), truncated beyond; integrated bandwidth "
+            f"{HIGH_TAIL_RATIO}), scope {settings.high_tail_scope}, truncated beyond; integrated bandwidth "
             f"high_tail_upper*dt={settings.high_tail_upper * settings.dt:.17g} <= pi "
             f"(source omega_max*dt in the diagnostics); recorded assumption, not solver data")
     else:
@@ -1103,6 +1401,25 @@ def _kernel_from_arrays(
             "radiation passivity are not established. duration_over_spacing_period "
             "is a legacy spacing indicator, not an alias recurrence criterion."
         )
+    if settings.a_inf_policy == A_INF_BAND_CONSISTENT:
+        cal = (omegas >= settings.a_inf_calibration_min) & (omegas <= settings.a_inf_calibration_max)
+        _require(int(np.count_nonzero(cal)) >= 2,
+                 RadiationSettingsError(
+                     "the A_inf calibration band must contain at least two source frequencies"))
+        a_rec_cal = _reconstruct_added_mass(t, kernel, a_inf, omegas[cal])
+        delta = np.mean(added_mass[cal] - a_rec_cal, axis=0)
+        a_inf_computed = a_inf
+        a_inf = a_inf + delta
+        provenance = dict(provenance)
+        provenance["a_inf_computed"] = a_inf_computed.tolist()
+        provenance["a_inf_band_consistent_delta"] = delta.tolist()
+        provenance["a_inf_calibration_omegas"] = omegas[cal].tolist()
+        assumptions.append(
+            f"a_inf_policy=band_consistent: time-domain A_inf = computed A_inf + mean over "
+            f"{int(np.count_nonzero(cal))} source frequencies in "
+            f"[{settings.a_inf_calibration_min:.17g}, {settings.a_inf_calibration_max:.17g}] "
+            "of (A - A_rec); computed A_inf and the difference are in the provenance "
+            "(Ogilvie-consistent with this band-limited kernel)")
     assumptions.extend(str(a) for a in extra_assumptions)
     if settings.execution_limits is not None:
         assumptions.append(
@@ -1294,7 +1611,7 @@ def compare_derived_reconstruction(
         raise RadiationError(
             "derived must be a DerivedHydroOperators artifact "
             f"(got {type(derived).__name__})")
-    if not isinstance(criteria, ReconstructionCriteria):
+    if not isinstance(criteria, (ReconstructionCriteria, FullBlockReconstructionCriteria)):
         raise ReconstructionCriteriaError(
             "caller-declared ReconstructionCriteria are required; there is no default")
     if source_dataset is not None:
@@ -1339,6 +1656,21 @@ def compare_derived_reconstruction(
     a_rec, b_rec = kernel.reconstruct(window)
     a_ref = np.asarray(derived.derived_added_mass[selection], dtype=np.float64)
     b_ref = np.asarray(derived.derived_damping[selection], dtype=np.float64)
+    if (isinstance(criteria, ReconstructionCriteria)
+            and kernel.settings.a_inf_policy == A_INF_BAND_CONSISTENT):
+        raise ReconstructionCriteriaError(
+            "a band-consistent A_inf kernel is compared with the full-block criteria only")
+    if isinstance(criteria, FullBlockReconstructionCriteria):
+        a_inf_difference = None
+        if kernel.settings.a_inf_policy == A_INF_BAND_CONSISTENT:
+            _require(kernel.settings.a_inf_calibration_max < criteria.omega_min,
+                     ReconstructionCriteriaError(
+                         "the A_inf calibration band must lie below the evaluation window"))
+            a_inf_kernel = verify_band_consistent_added_mass_infinite(
+                kernel, derived.derived_added_mass_infinite, derived.omegas,
+                derived.derived_added_mass)
+            a_inf_difference = a_inf_kernel - np.asarray(derived.derived_added_mass_infinite)
+        return _full_block_report(criteria, window, a_rec, b_rec, a_ref, b_ref, a_inf_difference)
 
     a_error, a_threshold, a_pass = _compare_window(
         a_rec, a_ref, criteria.added_mass_abs_tol, criteria.added_mass_rel_tol)

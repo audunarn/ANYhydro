@@ -73,6 +73,20 @@ validated neutral dataset (validate_for_time_domain: explicit A_inf + source)
     `w5-physical-20261012b`); the declared tail removes it for the
     coefficients that follow a power law. Oscillating inter-body coupling
     terms are not power laws; tail adequacy stays a separately assessed gate.
+  - `high_tail_scope` (power-law tail only): `"full"` (default) or
+    `"body_diagonal"`, which continues each body's own block and truncates
+    inter-body coupling (oscillating in omega, not a power law). A principal
+    block of a PSD matrix is PSD, so passivity is inherited.
+- `a_inf_policy`: `"computed"` (default; the source A_inf) or
+  `"band_consistent"` with `a_inf_calibration_min/max`: the time-domain
+  A_inf is the computed A_inf plus the mean over the calibration-band source
+  frequencies of `A - A_rec` (Ogilvie-consistent with this band-limited
+  kernel). The computed A_inf, the difference and the calibration
+  frequencies are stored in the provenance;
+  `verify_band_consistent_added_mass_infinite` proves them (computed value
+  equals the source exactly, band mean of `A - A_rec` vanishes) and consumers
+  never trust the stored value without it. The W5 workflow requires the
+  calibration band below the reconstruction window.
 - `symmetry_tol`, `passivity_tol`: explicit validation tolerances. There is
   no blanket scientific default.
 - `execution_limits`: optional frozen public `RadiationExecutionLimits`
@@ -183,3 +197,15 @@ content hash (`RadiationSerializationError` on mismatch or tampering).
   the complete route with declared criteria and artifact reproduction.
 
 Development fixtures and these tests confer no scientific qualification.
+
+## Full-block reconstruction criteria (W5 K1-K3)
+
+`reconstruction_criteria_from_dict` accepts the legacy per-coefficient form
+or `form="full_block"` (`FullBlockReconstructionCriteria`: window,
+`block_rel_tol`, `modal_rel_tol`, `energetic_fraction`, `cluster_fraction`).
+`compare_derived_reconstruction` then returns a
+`FullBlockReconstructionReport`: per window frequency the Frobenius relative
+errors of Z = B + i omega A, A and B (K1) and the largest energetic-mode
+relative error of A and B (K2, clusters in spectral norm), plus reported-only
+per-coefficient errors and the A_inf difference (K3). The raw-dataset route
+keeps the per-coefficient form.
