@@ -79,16 +79,17 @@ class TestLimitValidation:
             with pytest.raises(CapabilityError, match="positive"):
                 CapytaineExecutionLimits(**{field: bad})
 
-    def test_panel_ceiling_2048(self):
-        # absolute software ceiling for EXPLICIT limits (prospective
-        # contract change): the registered 4/6-subdivision source-study
-        # meshes (384/864 panels) must remain usable; 2049 is refused
+    def test_panel_ceiling_6144(self):
+        # absolute software ceiling for EXPLICIT limits (raised 2026-10-12
+        # for the W5 extended-band levels 10/15 = 2400/5400 panels); 6145
+        # is refused
         assert CapytaineExecutionLimits(max_total_panels=100).max_total_panels == 100
         assert CapytaineExecutionLimits(max_total_panels=864).max_total_panels == 864
         assert CapytaineExecutionLimits(max_total_panels=1536).max_total_panels == 1536
         assert CapytaineExecutionLimits(max_total_panels=2048).max_total_panels == 2048
+        assert CapytaineExecutionLimits(max_total_panels=6144).max_total_panels == 6144
         with pytest.raises(CapabilityError, match="ceiling"):
-            CapytaineExecutionLimits(max_total_panels=2049)
+            CapytaineExecutionLimits(max_total_panels=6145)
 
     def test_frequency_ceiling_513(self):
         assert CapytaineExecutionLimits(max_finite_omegas=513).max_finite_omegas == 513
