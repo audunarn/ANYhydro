@@ -592,9 +592,10 @@ class FullBlockReconstructionCriteria:
     K1: ||Z_rec - Z||_F, ||A_rec - A||_F, ||B_rec - B||_F each within
     ``block_rel_tol`` of the reference norm (Z = B + i omega A).
     K2: for A and B, energetic modes of S(X) (eigenvalue >= energetic_fraction
-    times the largest; clusters closer than cluster_fraction use the spectral
-    norm of V^T (S(X_rec) - S(X)) V over the cluster minimum) within
-    ``modal_rel_tol``. Per-coefficient errors are reported only (K3).
+    times the largest, rho): |v^T S(X_rec) v - lambda| <= modal_rel_tol * rho;
+    clusters closer than cluster_fraction use the spectral norm of
+    V^T (S(X_rec) - S(X)) V (spectral-radius form, owner amendment
+    2026-10-12). Per-coefficient errors are reported only (K3).
     """
 
     omega_min: float
@@ -605,6 +606,7 @@ class FullBlockReconstructionCriteria:
     cluster_fraction: float
 
     FORM = "full_block"
+    MODAL_REFERENCE = "spectral_radius"
 
     def __post_init__(self) -> None:
         for name in ("omega_min", "omega_max", "block_rel_tol", "modal_rel_tol",
@@ -625,7 +627,8 @@ class FullBlockReconstructionCriteria:
         return {"form": self.FORM, "omega_min": self.omega_min, "omega_max": self.omega_max,
                 "block_rel_tol": self.block_rel_tol, "modal_rel_tol": self.modal_rel_tol,
                 "energetic_fraction": self.energetic_fraction,
-                "cluster_fraction": self.cluster_fraction}
+                "cluster_fraction": self.cluster_fraction,
+                "modal_reference": self.MODAL_REFERENCE}
 
 
 def reconstruction_criteria_from_dict(data: Mapping[str, Any]):
@@ -634,6 +637,10 @@ def reconstruction_criteria_from_dict(data: Mapping[str, Any]):
         raise ReconstructionCriteriaError("criteria must be a mapping")
     fields = dict(data)
     form = fields.pop("form", None)
+    if form == FullBlockReconstructionCriteria.FORM:
+        reference = fields.pop("modal_reference", FullBlockReconstructionCriteria.MODAL_REFERENCE)
+        _require(reference == FullBlockReconstructionCriteria.MODAL_REFERENCE,
+                 ReconstructionCriteriaError(f"unsupported modal_reference {reference!r}"))
     try:
         if form == FullBlockReconstructionCriteria.FORM:
             return FullBlockReconstructionCriteria(**fields)
@@ -678,9 +685,10 @@ def _weak_modes(rec, ref, fraction):
 
 
 def _modal_error(rec, ref, fraction, cluster):
-    """Largest K2 relative error over the energetic modes of S(ref).
+    """Largest K2 error over the energetic modes of S(ref), relative to rho.
 
-    A reference without a positive eigenvalue has no energetic mode (0).
+    rho is the largest eigenvalue of S(ref) (spectral-radius form). A
+    reference without a positive eigenvalue has no energetic mode (0).
     """
     sr = 0.5 * (ref + ref.T)
     sc = 0.5 * (rec + rec.T)
@@ -693,9 +701,9 @@ def _modal_error(rec, ref, fraction, cluster):
     for g in _energetic_groups(lam, fraction, cluster):
         V = vec[:, g]
         if len(g) == 1:
-            err = abs(float(V[:, 0] @ sc @ V[:, 0]) - lam[g[0]]) / lam[g[0]]
+            err = abs(float(V[:, 0] @ sc @ V[:, 0]) - lam[g[0]]) / lam[0]
         else:
-            err = float(np.linalg.norm(V.T @ (sc - sr) @ V, 2) / np.min(lam[g]))
+            err = float(np.linalg.norm(V.T @ (sc - sr) @ V, 2) / lam[0])
         worst = max(worst, err)
     return worst
 

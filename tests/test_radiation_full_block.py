@@ -114,7 +114,7 @@ def test_body_diagonal_tail_leaves_inter_body_coupling_truncated():
 def test_criteria_factory_forms():
     fb = rad.reconstruction_criteria_from_dict(FULL_BLOCK)
     assert isinstance(fb, rad.FullBlockReconstructionCriteria)
-    assert fb.to_dict() == FULL_BLOCK
+    assert fb.to_dict() == dict(FULL_BLOCK, modal_reference="spectral_radius")
     legacy = rad.reconstruction_criteria_from_dict(dict(
         omega_min=1.0, omega_max=2.0, added_mass_abs_tol=0.1, added_mass_rel_tol=0.01,
         damping_abs_tol=0.1, damping_rel_tol=0.01))
@@ -146,12 +146,17 @@ def test_full_block_report_on_derived_kernel():
         rad.compare_derived_reconstruction(forged, der, crit)
 
 
-def test_modal_error_uses_relative_eigenvalue_and_clusters():
+def test_modal_error_is_relative_to_spectral_radius():
     ref = np.diag([100.0, 100.0, 10.0, 1e-5])
-    rec = np.diag([102.0, 100.0, 10.0, 5e-5])          # cluster error 2 %, weak mode ignored
+    rec = np.diag([102.0, 100.0, 10.0, 5e-5])          # cluster error 2 of rho 100
     assert rad._modal_error(rec, ref, 1e-3, 0.01) == pytest.approx(0.02)
-    rec2 = np.diag([100.0, 100.0, 10.3, 0.0])
-    assert rad._modal_error(rec2, ref, 1e-3, 0.01) == pytest.approx(0.03)
+    rec2 = np.diag([100.0, 100.0, 10.3, 0.0])          # 0.3 on a small mode: 0.3 % of rho
+    assert rad._modal_error(rec2, ref, 1e-3, 0.01) == pytest.approx(0.003)
+    crit = rad.reconstruction_criteria_from_dict(FULL_BLOCK)
+    assert crit.to_dict()["modal_reference"] == "spectral_radius"
+    assert rad.reconstruction_criteria_from_dict(crit.to_dict()) == crit
+    with pytest.raises(rad.ReconstructionCriteriaError):
+        rad.reconstruction_criteria_from_dict(dict(FULL_BLOCK, modal_reference="own_eigenvalue"))
 
 
 def _band_kernel(ds):
