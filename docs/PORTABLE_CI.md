@@ -100,6 +100,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_retained_panel_pairs | retained panel-pair quadrature discriminator |
 | test_retained_weak_neumann | retained-field weak Neumann experiment (guarded) |
 | test_thin_sheet_galerkin | linear Galerkin thin-sheet panels, plan TS2: analytic triangle 1/R, thin-disc added mass |
+| test_thin_sheet_galerkin_fs | free-surface Galerkin sheets, plan TS2: complex load vector, exact wave Hessian (Bessel integrals), image kernel, blocked assembly, near-surface refusal; Capytaine-dependent checks skip without the extra |
 | test_thin_sheet_kernels | thin-sheet (dipole panel) kernels, plan TS1: exact vortex-ring Rankine operator; real-Capytaine wave/image checks skip without the extra |
 
 ## Excluded modules and remaining gates

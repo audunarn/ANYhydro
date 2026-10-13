@@ -79,6 +79,7 @@ PORTABLE_TEST_MODULES = (
     "test_submerged_lid",
     "test_surfaces",
     "test_thin_sheet_galerkin",
+    "test_thin_sheet_galerkin_fs",
     "test_thin_sheet_kernels",
     "test_transform",
 )

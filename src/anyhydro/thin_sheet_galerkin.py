@@ -123,7 +123,7 @@ def load_vector(vertices, triangles, values_at_points):
     points = np.einsum('qa,tak->tqk', GAUSS_BARY, p)
     f = values_at_points(points.reshape(-1, 3), np.repeat(normals, len(GAUSS_W), axis=0))
     f = f.reshape(len(triangles), len(GAUSS_W), -1)
-    out = np.zeros((len(vertices), f.shape[-1]))
+    out = np.zeros((len(vertices), f.shape[-1]), dtype=np.result_type(f.dtype, float))   # complex f stays complex
     for a in range(3):
         contribution = np.einsum('q,tqm->tm', GAUSS_W * GAUSS_BARY[:, a], f) * areas[:, None]
         np.add.at(out, triangles[:, a], contribution)

@@ -45,6 +45,18 @@ ladder D0-D14 in ANYmarine's IMPLEMENTATION_PLAN.md; their evidence feeds D10-D1
 - TS2 Isolated submerged sheet, infinite depth (D10). A deeply submerged thin disc gives the heave
   added mass 8/3 rho a^3 in the infinite-fluid limit, with edge-mesh refinement convergence. Plus
   agreement with OrcaWave on a submerged plate case built via OrcFxAPI.
+- TS2 result, free surface vs OrcaWave (2026-10-13): PASS as declared in the evidence LIMITS.md
+  (5 % on mesh-extrapolated A33, B33; L = 2 m square plate at 1.5 m, T = 2..10 s, ours n = 16/24
+  linear, OrcaWave n = 16/32 dipole panels, first-order Richardson). A33 +0.21..+0.24 %, B33
+  +0.53..+0.90 %; reported: heave excitation +0.19..+0.24 % and 0.01 deg, A55 +0.6 %. Unextrapolated
+  meshes of this plate differ by 15-27 % (ours converge from below, OrcaWave from above, edge
+  singularity), so this comparison needs the extrapolation. Infinite-fluid limit 0.455 rho L^3 from both
+  (DNV-RP-H103 square plate 0.4547). Haskind holds to 1e-4 on one mesh. Module thin_sheet_galerkin_fs;
+  supported domain: sheet top at least one longest triangle edge below the surface (7-point vs
+  448-point product rule within 3e-6 there); closer and piercing sheets are refused (TS4). The wave
+  Hessian is exact given Capytaine's gradient, which is itself accurate to ~7e-4 (exact Bessel
+  integrals). Evidence:
+  anymarine-evidence/thin-sheet-ts2-orcawave-20261013 (attempt 1 with a real-valued load vector kept).
 - TS3 Jump/side reversal and signed force, moment and work mapping (D11). Reversing the sheet
   orientation leaves all coefficients unchanged, with the pressure jump sign reversed.
 - TS4 Mixed hull plus sheet, and surface-piercing sheets (D12). Reciprocity (A, B symmetric) and
