@@ -2,9 +2,11 @@
 """Thin-sheet (dipole panel) kernels on Capytaine's Green-function convention (plan TS1).
 
 Capytaine's Rankine kernel is ``G = -1/(4 pi r)`` (pinned by tests). A flat panel carrying a
-constant potential jump ``m`` (normal from the vertex winding, right-handed) has the double-layer
-potential ``Phi(x) = m * int dG/dn_xi dS`` whose gradient off the panel equals the velocity of a
-vortex ring on the panel boundary with circulation ``m``. That ring velocity is also the
+constant double-layer density ``mu`` (normal from the vertex winding, right-handed) has the
+potential ``Phi(x) = mu * int dG/dn_xi dS``; with this negative kernel ``Phi`` jumps by ``-mu``
+across the panel along its normal, so the physical potential jump is ``m = phi_plus - phi_minus =
+-mu``. The gradient of ``Phi`` off the panel equals the velocity of a vortex ring on the panel
+boundary with circulation ``mu`` (all functions here are per unit ``mu``). That ring velocity is also the
 Hadamard finite part on the panel itself, i.e. the hypersingular Rankine operator of the sheet
 equations. Qt-free, Capytaine-free (numpy only).
 """

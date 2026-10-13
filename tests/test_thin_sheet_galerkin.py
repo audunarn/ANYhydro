@@ -77,3 +77,19 @@ def test_ts2_thin_disc_heave_added_mass_converges_to_8_over_3():
         errors.append(A[2, 2] / (8 / 3 * rho * a ** 3) - 1.0)
     assert all(abs(e2) < abs(e1) for e1, e2 in zip(errors, errors[1:]))
     assert abs(errors[-1]) <= 0.01
+
+
+@pytest.mark.parametrize('x', [[2.0, 1e-9, 0.0], [2.0, 1e-9, 1e-9], [-1.5, 1e-12, 0.0], [2.0, -1e-9, 0.0]])
+def test_triangle_single_layer_is_finite_near_an_edge_extension(x):
+    """Review: R + l cancelled to zero beyond an edge's end; the exact R0^2/(R - l) form is used."""
+    tri = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    value = triangle_single_layer(np.array(x), tri)[0]
+    limit = triangle_single_layer(np.array([x[0], 0.0, 0.0]), tri)[0]
+    assert np.isfinite(value) and value == pytest.approx(limit, rel=1e-7)
+
+
+def test_sheet_without_interior_nodes_has_no_linear_jump():
+    """Review: a single triangle has every node on its free edge; no unknowns, zero added mass."""
+    V = np.array([[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]])
+    A, mu = isolated_sheet_added_mass(V, np.array([[0, 1, 2]]), np.array([3]), rotation_center=(0, 0, 0), rho=1025.0)
+    assert np.all(A == 0.0) and np.all(mu == 0.0)

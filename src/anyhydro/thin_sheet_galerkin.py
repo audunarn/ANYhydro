@@ -44,7 +44,11 @@ def triangle_single_layer(points, tri):
         r_plus = np.sqrt(r0_sq + l_plus * l_plus)
         r_minus = np.sqrt(r0_sq + l_minus * l_minus)
         on_line = np.abs(p0) <= 1e-14 * length
-        num, den = r_plus + l_plus, r_minus + l_minus
+
+        def r_plus_l(r, l):
+            # R + l without cancellation: for l < 0 use the exact R + l = R0^2 / (R - l).
+            return np.where(l >= 0.0, r + l, r0_sq / np.where(l >= 0.0, 1.0, r - l))
+        num, den = r_plus_l(r_plus, l_plus), r_plus_l(r_minus, l_minus)
         log_term = np.where(on_line, 0.0, p0 * np.log(np.where(on_line, 1.0, num) / np.where(on_line, 1.0, den)))
         angle = (np.arctan2(p0 * l_plus, r0_sq + ad * r_plus) - np.arctan2(p0 * l_minus, r0_sq + ad * r_minus))
         total += log_term - ad * angle
@@ -130,7 +134,7 @@ def isolated_sheet_added_mass(vertices, faces, face_sizes, *, rotation_center, r
     """Infinite-fluid added mass of an isolated sheet with linear Galerkin panels (Rankine only)."""
     vertices, triangles = triangulate(vertices, faces, face_sizes)
     fixed = set(free_edge_nodes(triangles))
-    free = np.array([v for v in range(len(vertices)) if v not in fixed])
+    free = np.array([v for v in range(len(vertices)) if v not in fixed], dtype=int)
     K = rankine_galerkin(vertices, triangles)
     centre = np.asarray(rotation_center, dtype=float)
 
@@ -138,6 +142,7 @@ def isolated_sheet_added_mass(vertices, faces, face_sizes, *, rotation_center, r
         return np.column_stack([normals, np.cross(points - centre, normals)])
     b = load_vector(vertices, triangles, modes)                # (n_nodes, 6)
     mu = np.zeros((len(vertices), 6))
-    mu[free] = np.linalg.solve(K[np.ix_(free, free)], b[free])
+    if free.size:                       # a sheet with no interior node carries no linear jump
+        mu[free] = np.linalg.solve(K[np.ix_(free, free)], b[free])
     added_mass = rho * b.T @ mu                                # A = rho int mu (V . n) dS (m = -mu)
     return 0.5 * (added_mass + added_mass.T), mu

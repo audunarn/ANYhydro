@@ -10,9 +10,10 @@ route real. The development slices are named TS1-TS6 so as not to clash with the
 ladder D0-D14 in ANYmarine's IMPLEMENTATION_PLAN.md; their evidence feeds D10-D12.
 
 ## Formulation (WAMIT-style dipole panels, direct method)
-- Unknowns: phi on hull (thick) panels; the potential jump m = phi_plus - phi_minus on sheet panels
-  (oriented midsurface, normal minus to plus, THIN_SHEET_SURFACES.md).
-- Hull rows: the existing direct-method equation, plus sheet columns int m dG/dn_xi dS (double
+- Unknowns: phi on hull (thick) panels; on sheet panels the double-layer density mu of
+  phi = int mu dG/dn_xi dS (oriented midsurface, normal minus to plus, THIN_SHEET_SURFACES.md).
+  With Capytaine's G = -1/(4 pi r) the physical jump is m = phi_plus - phi_minus = -mu.
+- Hull rows: the existing direct-method equation, plus sheet columns int mu dG/dn_xi dS (double
   layer, without a jump term).
 - Sheet rows: d/dn_x of the representation equals the prescribed normal velocity, which is
   continuous across the sheet (V.n for radiation, -dphi_I/dn for diffraction).
