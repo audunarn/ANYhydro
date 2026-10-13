@@ -37,6 +37,7 @@ JSON_DATASET_ATTRS = (
     "hydrostatic_contract",
     "excitation_source_contract",
     "wamit_import",
+    "reciprocity_diagnostic",
 )
 
 

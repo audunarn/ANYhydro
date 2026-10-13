@@ -82,6 +82,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_radiation_long_kernel | long radiation kernel quadrature |
 | test_radiation_oscillatory | oscillatory radiation quadrature |
 | test_radiation_parent_review | radiation parent review contracts |
+| test_reciprocity | pairwise reciprocity diagnostic of radiation matrices (owner decision 2026-10-13) |
 | test_records | neutral record contracts |
 | test_review_repairs | review repair contracts |
 | test_saved_panel_diagnostics | saved panel diagnostics (mock backend) |

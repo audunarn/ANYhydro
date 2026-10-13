@@ -56,6 +56,7 @@ from .errors import (
     UnsupportedOperationError,
 )
 from .persistence import load_hydro_dataset, save_hydro_dataset
+from .reciprocity import reciprocity_diagnostic, warn_if_exceeded
 from .green_function import (FAR_FIELD_DAMPING_FORMAT, IMAGINARY_PART_FORMAT,
                              anyhydro_green_function, far_field_damping,
                              far_field_theta_count)
@@ -70,7 +71,18 @@ __all__ = [
     "SUPPORTED_SETTINGS",
 ]
 
-CAPYTAINE_ADAPTER_VERSION = "0.5.0"
+CAPYTAINE_ADAPTER_VERSION = "0.5.1"   # 0.5.1: reciprocity_diagnostic attribute
+
+
+def _warn_reciprocity(dataset):
+    """Warn (from ``solve``, fresh or cached) when the stored reciprocity diagnostic exceeds its level.
+
+    A fresh dataset holds the JSON text; a cache load decodes JSON attributes to dicts (persistence).
+    """
+    stored = dataset.attrs.get("reciprocity_diagnostic")
+    if stored is not None:
+        warn_if_exceeded(json.loads(stored) if isinstance(stored, str) else stored, stacklevel=4)
+
 
 #: Largest heading count for the far-field damping (k R bound); refused above.
 MAX_FAR_FIELD_THETA = 16384
@@ -679,6 +691,7 @@ class CapytaineBackend(HydrodynamicsBackend):
                     # public dataset, so fresh and warm returns of the
                     # same physical request hash identically.
                     cached.attrs.pop("cache_identity", None)
+                    _warn_reciprocity(cached)
                     return cached
 
         dataset = self._solve_fresh(bodies, request, settings)
@@ -706,6 +719,7 @@ class CapytaineBackend(HydrodynamicsBackend):
             except HydroError:
                 # a failed cache write never invalidates a correct solve
                 pass
+        _warn_reciprocity(dataset)
         return dataset
 
     def _solve_fresh(
@@ -953,6 +967,8 @@ class CapytaineBackend(HydrodynamicsBackend):
             [b.center_of_mass for b in bodies], dtype=np.float64
         )
 
+        reciprocity = reciprocity_diagnostic(added_mass, damping, request.omegas, our_keys)
+
         return assemble_hydro_dataset(
             bodies,
             request,
@@ -981,5 +997,6 @@ class CapytaineBackend(HydrodynamicsBackend):
                 "hydrostatic_stiffness_definition": HYDROSTATIC_NOTE,
                 "development_limits": self._limits.describe(),
                 "execution_limits": self._limits.as_dict(),
+                "reciprocity_diagnostic": reciprocity,
             },
         )

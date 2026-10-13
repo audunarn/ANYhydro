@@ -483,3 +483,44 @@ class TestCache:
                     ref = np.array([getattr(r, name)[lab] for lab in labels])
                     scale = max(np.abs(ref).max(), 1e-12)
                     assert np.max(np.abs(mine - ref)) <= 1e-2 * scale, (name, omega, rad)
+
+
+def test_adapter_records_the_reciprocity_diagnostic():
+    """Owner decision 2026-10-13: every fresh adapter dataset carries the pairwise reciprocity diagnostic."""
+    from anyhydro.reciprocity import dataset_reciprocity
+    body = _box_body("alpha", ALPHA_CENTER)
+    dataset = CapytaineBackend().solve((body,), _dev_request())
+    stored = json.loads(dataset.attrs["reciprocity_diagnostic"])
+    assert stored == json.loads(json.dumps(dataset_reciprocity(dataset)))
+    assert dataset.attrs["adapter_version"] == cb.CAPYTAINE_ADAPTER_VERSION == "0.5.1"
+
+
+def test_reciprocity_warning_on_fresh_and_cached_solves_points_at_the_caller(tmp_path, monkeypatch):
+    """Review: the warning fires for cached returns too and is attributed to the caller of solve()."""
+    import warnings
+    import anyhydro.reciprocity as rec
+    from anyhydro.reciprocity import ReciprocityWarning
+    monkeypatch.setattr(rec, "RECIPROCITY_WARNING", 0.0)
+    monkeypatch.setattr(cb, "reciprocity_diagnostic",
+                        lambda *a, **k: rec.reciprocity_diagnostic(*a, **k, threshold=-1.0))
+    body = _box_body("alpha", ALPHA_CENTER)
+    backend = CapytaineBackend()
+    for _ in range(2):                                                  # fresh, then cached
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            backend.solve((body,), _dev_request(backend_settings={"cache_dir": str(tmp_path)}))
+        hits = [w for w in caught if issubclass(w.category, ReciprocityWarning)]
+        assert len(hits) == 1 and hits[0].filename == __file__
+
+
+def test_reciprocity_attribute_hashes_identically_fresh_and_cache_reloaded(tmp_path):
+    """Review round 4: the fresh JSON text and the reloaded dict must give the same content hash."""
+    from anyhydro.hashing import dataset_content_hash
+    body = _box_body("alpha", ALPHA_CENTER)
+    backend = CapytaineBackend()
+    settings = {"cache_dir": str(tmp_path)}
+    fresh = backend.solve((body,), _dev_request(backend_settings=settings))
+    cached = backend.solve((body,), _dev_request(backend_settings=settings))
+    assert isinstance(fresh.attrs["reciprocity_diagnostic"], str)
+    assert isinstance(cached.attrs["reciprocity_diagnostic"], dict)
+    assert dataset_content_hash(fresh) == dataset_content_hash(cached)

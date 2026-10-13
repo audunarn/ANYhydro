@@ -67,6 +67,7 @@ PORTABLE_TEST_MODULES = (
     "test_radiation_long_kernel",
     "test_radiation_oscillatory",
     "test_radiation_parent_review",
+    "test_reciprocity",
     "test_records",
     "test_retained_panel_energy_audit",
     "test_retained_block_criteria",
