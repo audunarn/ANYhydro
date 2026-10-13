@@ -99,6 +99,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_retained_panel_energy_audit | retained panel energy audit tool |
 | test_retained_panel_pairs | retained panel-pair quadrature discriminator |
 | test_retained_weak_neumann | retained-field weak Neumann experiment (guarded) |
+| test_thin_sheet_kernels | thin-sheet (dipole panel) kernels, plan TS1: exact vortex-ring Rankine operator; real-Capytaine wave/image checks skip without the extra |
 
 ## Excluded modules and remaining gates
 
