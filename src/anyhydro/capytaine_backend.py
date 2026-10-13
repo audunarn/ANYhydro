@@ -767,7 +767,9 @@ class CapytaineBackend(HydrodynamicsBackend):
         for b in bodies:
             for dof in DOF_NAMES:
                 our_keys.append(f"{b.body_id}::{dof}")
-                cpt_labels.append(_cpt_dof_label(b.body_id, dof))
+                # A single body is solved directly (no Multibody), so its Capytaine
+                # DOF labels carry no ``<body_id>__`` prefix.
+                cpt_labels.append(_CPT_DOF_NAME[dof] if len(bodies) == 1 else _cpt_dof_label(b.body_id, dof))
         n_dof = len(our_keys)
 
         # -- one combined solve over the full grid ---------------------------

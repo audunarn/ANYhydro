@@ -91,6 +91,25 @@ def _box_body(body_id: str, center) -> HydroBody:
     )
 
 
+def test_single_body_solve_uses_the_unprefixed_capytaine_dofs():
+    """A one-body request is solved without a Multibody; its DOF labels have no body prefix."""
+    import capytaine as cpt
+    from anyhydro.capytaine_backend import _face_lists
+    body = _box_body("alpha", ALPHA_CENTER)
+    dataset = CapytaineBackend().solve((body,), _dev_request())
+    assert [str(k) for k in dataset["influenced_dof"].values] == list(body_dof_keys("alpha"))
+    # Independent: the same body solved directly with Capytaine, DOF by DOF.
+    mesh = cpt.Mesh(vertices=np.array(body.mesh.vertices), faces=_face_lists(body.mesh.faces, body.mesh.face_sizes))
+    direct_body = cpt.FloatingBody(mesh, dofs=cpt.rigid_body_dofs(rotation_center=tuple(body.rotation_center)))
+    order = ("Surge", "Sway", "Heave", "Roll", "Pitch", "Yaw")
+    results = cpt.BEMSolver().solve_all([cpt.RadiationProblem(body=direct_body, omega=1.0, radiating_dof=d,
+                                                              rho=1025.0, g=9.81) for d in order])
+    direct = {(r.radiating_dof, d): r.added_mass[d] for r in results for d in order}
+    expected = np.array([[direct[(rad, inf)] for rad in order] for inf in order])
+    added = np.asarray(dataset["added_mass"].values[0])
+    assert np.allclose(added, expected, rtol=1e-10, atol=1e-8 * np.max(np.abs(expected)))
+
+
 def _dev_bodies():
     return (_box_body("alpha", ALPHA_CENTER), _box_body("beta", BETA_CENTER))
 
