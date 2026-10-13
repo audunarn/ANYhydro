@@ -32,6 +32,15 @@ ladder D0-D14 in ANYmarine's IMPLEMENTATION_PLAN.md; their evidence feeds D10-D1
   - Self term at a disc centre vs the analytic vortex-ring value.
   - Wave-term Hessian by central differences: O(h^2) Richardson convergence, trace 0 (harmonic), and
     tabulated vs exact (untabulated) evaluation measured.
+- TS2 result with constant panels (2026-10-13): NOGO as declared. Thin-disc heave added mass
+  errors +14.4 %, +8.0 %, +5.5 % at 144, 576 and 1296 panels: first-order convergence, with the rim
+  panels 13-41 % over-strong because constant strength cannot follow the sqrt(a - r) edge decay
+  (evidence anymarine-evidence/thin-sheet-ts2-20261013). Owner decision 2026-10-13: linear panels.
+  The sheet jump is piecewise linear on triangles, zero at free-edge nodes, and tested by Galerkin:
+  - the Rankine hypersingular part by Maue's identity, <psi, H mu> = int int G0 curl psi . curl mu
+    (G0 = 1/(4 pi r)), with triangle-pair integrals of 1/r (analytic inner integral, Gauss outer);
+  - image and wave parts (regular kernels) by Gauss product rules on the TS1 analytic Hessians.
+  TS2 keeps its declared 1 % limit.
 - TS2 Isolated submerged sheet, infinite depth (D10). A deeply submerged thin disc gives the heave
   added mass 8/3 rho a^3 in the infinite-fluid limit, with edge-mesh refinement convergence. Plus
   agreement with OrcaWave on a submerged plate case built via OrcFxAPI.
