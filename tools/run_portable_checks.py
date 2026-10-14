@@ -104,6 +104,11 @@ EXCLUDED_TEST_MODULES = {
         "imports test_capytaine_backend. Remaining gate: direct-method far-field "
         "qualification against real Capytaine solves."
     ),
+    "test_direct_finite_depth": (
+        "real Capytaine direct solves (optional anyhydro[capytaine] extra) and the "
+        "John-series oracle in tools/. Remaining gate: direct-method finite-depth "
+        "qualification against real Capytaine solves."
+    ),
     "test_excitation_source": (
         "module-level 'from anyloads import RegularWave' needs the optional "
         "anyhydro[sea-state] extra. Remaining gate: sea-state integration "

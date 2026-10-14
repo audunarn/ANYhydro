@@ -110,6 +110,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | --- | --- | --- |
 | test_build_e1_backend | reads gitignored local `.development-evidence/w5-isolated-backend-20261010` upstream Capytaine Fortran sources at collection time; the evidence is deliberately not published | isolated backend build and qualification campaign with published sources |
 | test_capytaine_backend | `TestDirectCapytaineComparison` executes real Capytaine solves needing the optional `anyhydro[capytaine]` extra | backend qualification against real Capytaine artifacts |
+| test_direct_finite_depth | real Capytaine direct solves needing the optional `anyhydro[capytaine]` extra; uses the John-series oracle in `tools/` | direct-method finite-depth qualification against real Capytaine solves |
 | test_direct_far_field | real Capytaine direct/indirect solves needing the optional `anyhydro[capytaine]` extra; imports `test_capytaine_backend` | direct-method far-field qualification against real Capytaine solves |
 | test_excitation_source | module-level `from anyloads import RegularWave` needs the optional `anyhydro[sea-state]` extra | sea-state integration qualification with ANYloads |
 | test_sea_excitation | module-level ANYloads imports need the optional `anyhydro[sea-state]` extra | sea-state integration qualification with ANYloads |
