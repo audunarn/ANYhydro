@@ -67,8 +67,22 @@ Verified against installed Capytaine 3.0.0 source (no guessing):
 - Invalid (non-finite) solver output: `BackendSolveError` — no physical
   replacement coefficients are ever invented.
 - Unknown backend settings: `CapabilityError`. Supported keys:
-  `method` (BEM method passed to `fill_dataset`), `cache_dir` (cache
-  directory override). Unknown keys are refused, not silently ignored.
+  `method`, `cache_dir` (cache directory override) and `auxiliary_lid_policy`.
+  Unknown keys are refused, not silently ignored.
+- `method` (adapter 0.5.2): `"indirect"` (the default; spelling it out gives the
+  same coefficients, under its own request hash and cache entry) or `"direct"` (opt-in). Any other string is refused with
+  `CapabilityError` (Capytaine itself would silently run the indirect method).
+  The BEM solver is built with the chosen method, so the finite-frequency and
+  the explicit omega=inf solves use the same formulation, and the dataset
+  records the resolved method in the `method` attribute. The direct method
+  returns no `radiation_damping_far_field`; derived-operator policies that need
+  it refuse such a dataset. Evidence (benchmark B3y, Y4/Y6): on the same barge
+  hull mesh the direct method agrees with OrcaWave to about 0.26 % of peak
+  (added mass/damping) and 0.71 % (excitation amplitude), where the indirect
+  method deviates by up to 5 % (U1) to 11 % (U0); the adapter equals plain
+  Capytaine to about 1e-10 of peak for both methods. Deep water, single body,
+  z = 0 lid only: finite depth, multibody and irregular-frequency behaviour of
+  the direct method are not yet qualified, so it stays opt-in.
 - Execution limits: `CapytaineExecutionLimits` (see below). Bool,
   fractional, non-finite, negative, zero and unknown limit controls raise
   `CapabilityError` at construction — before any Capytaine import or

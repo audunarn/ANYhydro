@@ -1000,3 +1000,11 @@ def test_npz_closed_before_refusal_traceback_or_success(
     path.rename(moved)
     moved.unlink()
     assert not path.exists() and not moved.exists()
+
+
+def test_far_field_policy_refuses_a_dataset_without_far_field_damping(oracle_ds):
+    """A direct-method Capytaine dataset has no far-field damping; the policy that needs it refuses."""
+    assert "radiation_damping_far_field" not in oracle_ds.data_vars
+    with pytest.raises(ops.DerivedOperatorError, match="radiation_damping_far_field"):
+        ops.derived_operators_from_dataset(
+            oracle_ds, make_settings(policy=ops.CORRECTION_FAR_FIELD_WEAK_MODES))

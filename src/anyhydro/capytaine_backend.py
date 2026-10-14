@@ -71,7 +71,7 @@ __all__ = [
     "SUPPORTED_SETTINGS",
 ]
 
-CAPYTAINE_ADAPTER_VERSION = "0.5.1"   # 0.5.1: reciprocity_diagnostic attribute
+CAPYTAINE_ADAPTER_VERSION = "0.5.2"   # 0.5.2: validated opt-in method='direct', also for omega=inf
 
 
 def _warn_reciprocity(dataset):
@@ -304,6 +304,18 @@ def _check_settings(settings: Mapping[str, Any]) -> dict:
             out[key] = value
     if "auxiliary_lid_policy" in out and out["auxiliary_lid_policy"] != "submerged_0p1m_v1":
         raise CapabilityError("unsupported auxiliary_lid_policy; only explicit submerged_0p1m_v1 is supported")
+    if "method" in out:
+        # Capytaine silently runs the indirect method for any string other
+        # than exactly "direct"; refuse instead of recording a method that
+        # was never used.
+        if out["method"] not in ("direct", "indirect"):
+            raise CapabilityError(
+                f"unsupported method {out['method']!r}; this adapter supports "
+                "only 'indirect' (the default) and 'direct' (opt-in)")
+        # An explicit 'indirect' is the default solve, but it stays in the
+        # settings: the request (and so its hash, cache key and provenance)
+        # differs from an unset method, and sharing one cache entry would
+        # make the two request forms overwrite each other.
     return out
 
 
@@ -792,9 +804,10 @@ class CapytaineBackend(HydrodynamicsBackend):
         # strengths are kept so the radiation Kochin functions of the same
         # solves give the far-field (energy-flux) damping, positive
         # semidefinite by construction (anyhydro.green_function).  A direct
-        # solve carries no far-field damping.
-        method = settings.get("method")
-        far_field = method in (None, "indirect")
+        # solve (opt-in) has no source strengths and carries no far-field
+        # damping; policies that need it refuse (anyhydro.operators).
+        method = settings.get("method", "indirect")
+        far_field = method == "indirect"
         n_theta = 0
         if far_field:
             all_vertices = np.vstack(
@@ -828,21 +841,23 @@ class CapytaineBackend(HydrodynamicsBackend):
         # decomposition and the exact propagating imaginary part (the
         # tabulated imaginary part gave indefinite damping); see
         # anyhydro.green_function and docs/FINITE_DEPTH_PRONY.md.
-        solver = cpt.BEMSolver(green_function=anyhydro_green_function())
+        # The solver owns the method, so the finite-frequency solves, the
+        # omega=inf solves below and the recorded settings all use the same one.
+        solver = cpt.BEMSolver(green_function=anyhydro_green_function(), method=method)
         from capytaine.io.xarray import assemble_dataset, problems_from_dataset
         problems = problems_from_dataset(matrix, combined)
         results = solver.solve_all(
             problems,
             keep_details=far_field,
-            method=method,
             n_jobs=self._limits.n_jobs,
             n_threads=self._limits.n_threads,
             progress_bar=False,
         )
         attrs = {"start_of_computation": datetime.now().isoformat(),
                  **solver.exportable_settings}
-        if method is not None:
-            attrs["method"] = method
+        if attrs.get("method") != method:
+            raise BackendSolveError(
+                f"capytaine recorded method {attrs.get('method')!r}, requested {method!r}")
         result = assemble_dataset(results, attrs=attrs, hydrostatics=False)
 
         def _finite(name: str, values: np.ndarray) -> np.ndarray:
@@ -994,6 +1009,7 @@ class CapytaineBackend(HydrodynamicsBackend):
             extra_attrs={
                 "adapter": "anyhydro-capytaine-development-adapter",
                 "adapter_version": CAPYTAINE_ADAPTER_VERSION,
+                "method": method,          # resolved BEM formulation: 'indirect' (default) or 'direct'
                 "hydrostatic_stiffness_definition": HYDROSTATIC_NOTE,
                 "development_limits": self._limits.describe(),
                 "execution_limits": self._limits.as_dict(),
