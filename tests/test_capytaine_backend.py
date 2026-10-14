@@ -650,3 +650,45 @@ def test_recorded_method_mismatch_is_refused(monkeypatch):
     with pytest.raises(BackendSolveError, match="recorded method"):
         CapytaineBackend().solve((_box_body("alpha", ALPHA_CENTER),),
                                  _dev_request(backend_settings={"method": "direct"}))
+
+
+# --------------------------------------------------------------------- #
+# direct-default programme D5: limits and diagnostics for both methods
+# --------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("method", ["indirect", "direct"])
+def test_zero_frequency_is_refused_before_any_solve_or_cache(method, tmp_path, monkeypatch):
+    def touched(*a, **k):
+        raise AssertionError("cache or solve reached before the zero-frequency refusal")
+    # Review (Sol r1): trap the cache-entry boundary itself, not only the solve
+    monkeypatch.setattr(CapytaineBackend, "_cache_identity", touched)
+    monkeypatch.setattr(CapytaineBackend, "_cache_load", touched)
+    monkeypatch.setattr(CapytaineBackend, "_solve_fresh", touched)
+    with pytest.raises(UnsupportedOperationError):
+        CapytaineBackend().solve((_box_body("alpha", ALPHA_CENTER),), _dev_request(
+            include_zero_frequency=True, backend_settings={"method": method, "cache_dir": str(tmp_path)}))
+    assert not any(tmp_path.iterdir())
+
+
+def test_direct_infinite_frequency_never_enters_the_far_field():
+    """omega = inf gives A_inf only; the far-field (Kochin) array covers the finite frequencies only."""
+    ds = CapytaineBackend().solve((_box_body("alpha", ALPHA_CENTER),), _dev_request(
+        omegas=np.array([0.8, 1.6]), include_infinite_frequency=True, backend_settings={"method": "direct"}))
+    assert np.all(np.isfinite(ds["added_mass_infinite"].values))
+    far = ds["radiation_damping_far_field"]
+    assert far.shape[0] == 2 and np.all(np.isfinite(far.values))
+
+
+@pytest.mark.parametrize("method", ["indirect", "direct"])
+def test_reciprocity_warning_fires_and_stays_silent_for_both_methods(method, monkeypatch):
+    import warnings
+    import anyhydro.reciprocity as rec
+    from anyhydro.reciprocity import ReciprocityWarning
+    body = _box_body("alpha", ALPHA_CENTER)
+    for threshold, expected in ((-1.0, 1), (1e9, 0)):
+        monkeypatch.setattr(cb, "reciprocity_diagnostic",
+                            lambda *a, _t=threshold, **k: rec.reciprocity_diagnostic(*a, **k, threshold=_t))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            CapytaineBackend().solve((body,), _dev_request(backend_settings={"method": method}))
+        assert len([w for w in caught if issubclass(w.category, ReciprocityWarning)]) == expected

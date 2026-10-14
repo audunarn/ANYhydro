@@ -12,6 +12,11 @@ over frequency (e.g. damping at long periods) are skipped, as are pairs with a z
 Evidence for the level: OrcaWave benchmark B3, barge sway/roll A42 vs A24 at T = 8 s gives 8.6 %
 (1700 panels), 2.4 % (6800) and 1.4 % (27200); the extrapolated coefficients of the two codes agree
 within 0.5 % (orcawave-benchmark-b-20261013/b3-uniform-refinement).
+The level holds for both BEM methods (direct-default programme D5, 2026-10-14; worst A / B
+defect): barge U0 deep indirect 4.4 % / 9.3 %, direct 3.8 % / 1.6 %; W5 two-box fixture n = 10
+added mass indirect 2.5 %, direct 0.8 %. Weak modes inflate the ratio for both methods (W5 damping
+heave/yaw: indirect 162 %, direct 105 %, yaw damping of a square box being near zero), so a
+warning on a pair with a near-zero diagonal is a resolution hint, not an error measure.
 """
 from __future__ import annotations
 
