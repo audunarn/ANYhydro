@@ -492,7 +492,7 @@ def test_adapter_records_the_reciprocity_diagnostic():
     dataset = CapytaineBackend().solve((body,), _dev_request())
     stored = json.loads(dataset.attrs["reciprocity_diagnostic"])
     assert stored == json.loads(json.dumps(dataset_reciprocity(dataset)))
-    assert dataset.attrs["adapter_version"] == cb.CAPYTAINE_ADAPTER_VERSION == "0.5.2"
+    assert dataset.attrs["adapter_version"] == cb.CAPYTAINE_ADAPTER_VERSION == "0.5.3"
 
 
 def test_reciprocity_warning_on_fresh_and_cached_solves_points_at_the_caller(tmp_path, monkeypatch):
@@ -573,8 +573,8 @@ def test_direct_method_matches_plain_capytaine_including_infinite_frequency():
         (body,), _dev_request(include_infinite_frequency=True, backend_settings={"method": "direct"}))
     indirect = CapytaineBackend().solve((body,), _dev_request(include_infinite_frequency=True))
     assert direct.attrs["method"] == "direct"
-    # no source strengths: far-field damping is absent, never invented
-    assert "radiation_damping_far_field" not in direct.data_vars
+    # no source strengths: far-field damping comes from Green's identity (adapter 0.5.3)
+    assert "green-identity" in direct["radiation_damping_far_field"].attrs["source"]
     A, B = _plain_capytaine(body, "direct", 1.0)
     A_inf, _ = _plain_capytaine(body, "direct", np.inf)
     scale = np.max(np.abs(A))

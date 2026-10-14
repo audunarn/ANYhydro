@@ -31,6 +31,8 @@ from .prony_fit import PRONY_FIT_FORMAT, _validated_class
 
 IMAGINARY_PART_FORMAT = 'anyhydro-exact-propagating-imaginary-v1'
 FAR_FIELD_DAMPING_FORMAT = 'anyhydro-kochin-far-field-damping-v1'
+#: Far-field damping from Green's-identity Kochin functions (direct method).
+FAR_FIELD_DAMPING_GREEN_IDENTITY_FORMAT = 'anyhydro-green-identity-kochin-far-field-damping-v1'
 GREEN_FUNCTION_FORMAT = 'anyhydro-green-function-v1'
 _ROW_BLOCK = 512
 
@@ -84,6 +86,45 @@ def far_field_theta_count(omegas, water_depth, gravity, radius, *, minimum=720):
     k_max = max(solve_wavenumber(float(w), gravity, water_depth) for w in omegas)
     n = int(4 * math.ceil(k_max * radius) + 64)
     return max(int(minimum), n)
+
+
+def green_identity_kochin(centers, normals, areas, boundary_condition, potential, theta, *,
+                          k, water_depth, ref_point=(0.0, 0.0)):
+    """Kochin function of a body solution from Green's identity on the hull.
+
+    For a solution known on the wetted hull only by its potential ``phi`` and
+    normal derivative ``dphi/dn`` (outward normals, into the fluid), as the
+    direct method provides,
+
+        H(theta) = (1/4 pi) int_hull [ (dphi/dn) psi - phi dpsi/dn ] dS,
+        psi = Z(z) exp(-i k ((x - x0) cos theta + (y - y0) sin theta)),
+
+    with Capytaine's normalisation of the source Kochin function
+    ``(1/4 pi) int sigma psi dS`` (capytaine.post_pro.kochin), so the result
+    feeds :func:`far_field_damping` unchanged.  Centroid rule, as Capytaine's.
+    Auxiliary lid panels must be excluded by the caller (the identity closes
+    on the physical hull).  Returns shape (n_theta,) complex.
+    """
+    centers = np.asarray(centers, dtype=np.float64)
+    normals = np.asarray(normals, dtype=np.float64)
+    areas = np.asarray(areas, dtype=np.float64)
+    dphi_dn = np.asarray(boundary_condition, dtype=np.complex128)
+    phi = np.asarray(potential, dtype=np.complex128)
+    theta = np.atleast_1d(np.asarray(theta, dtype=np.float64))
+    n = centers.shape[0]
+    if (centers.shape != (n, 3) or normals.shape != (n, 3) or areas.shape != (n,)
+            or dphi_dn.shape != (n,) or phi.shape != (n,)):
+        raise ValueError('centers/normals (n,3) and areas/boundary_condition/potential (n,) must match')
+    if not (0.0 < k < math.inf):
+        raise ValueError('the Kochin function needs a finite positive wavenumber')
+    Z, dZ = _depth_mode(centers[:, 2], k, water_depth)
+    c, s = np.cos(theta), np.sin(theta)
+    phase = np.exp(-1j * k * (np.outer(c, centers[:, 0] - ref_point[0])
+                              + np.outer(s, centers[:, 1] - ref_point[1])))          # (theta, n)
+    n_horizontal = np.outer(c, normals[:, 0]) + np.outer(s, normals[:, 1])          # (theta, n)
+    dpsi_dn = phase * (-1j * k * Z * n_horizontal + dZ * normals[:, 2])
+    psi = phase * Z
+    return (psi @ (dphi_dn * areas) - dpsi_dn @ (phi * areas)) / (4.0 * math.pi)
 
 
 def far_field_damping(kochin, omegas, wavenumbers, water_depth, rho):

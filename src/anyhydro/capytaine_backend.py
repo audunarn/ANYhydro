@@ -57,9 +57,9 @@ from .errors import (
 )
 from .persistence import load_hydro_dataset, save_hydro_dataset
 from .reciprocity import reciprocity_diagnostic, warn_if_exceeded
-from .green_function import (FAR_FIELD_DAMPING_FORMAT, IMAGINARY_PART_FORMAT,
-                             anyhydro_green_function, far_field_damping,
-                             far_field_theta_count)
+from .green_function import (FAR_FIELD_DAMPING_FORMAT, FAR_FIELD_DAMPING_GREEN_IDENTITY_FORMAT,
+                             IMAGINARY_PART_FORMAT, anyhydro_green_function, far_field_damping,
+                             far_field_theta_count, green_identity_kochin)
 from .prony_fit import PRONY_FIT_FORMAT
 from .records import HydroBody, HydroRequest
 from .schema import SCHEMA_VERSION, assemble_hydro_dataset
@@ -71,7 +71,7 @@ __all__ = [
     "SUPPORTED_SETTINGS",
 ]
 
-CAPYTAINE_ADAPTER_VERSION = "0.5.2"   # 0.5.2: validated opt-in method='direct', also for omega=inf
+CAPYTAINE_ADAPTER_VERSION = "0.5.3"   # 0.5.3: far-field damping for method='direct' (Green's identity)
 
 
 def _warn_reciprocity(dataset):
@@ -481,7 +481,9 @@ class CapytaineBackend(HydrodynamicsBackend):
             "capytaine_version": cpt_version,
             "finite_depth_prony_decomposition": PRONY_FIT_FORMAT,
             "green_function_imaginary_part": IMAGINARY_PART_FORMAT,
-            "far_field_damping": FAR_FIELD_DAMPING_FORMAT,
+            "far_field_damping": (FAR_FIELD_DAMPING_FORMAT
+                                  if settings.get("method", "indirect") == "indirect"
+                                  else FAR_FIELD_DAMPING_GREEN_IDENTITY_FORMAT),
             "settings": dict(settings),
             "execution_limits": self._limits.as_dict(),
             "request": {
@@ -800,14 +802,16 @@ class CapytaineBackend(HydrodynamicsBackend):
 
         # -- one combined solve over the full grid ---------------------------
         # Equivalent to BEMSolver.fill_dataset (problems_from_dataset +
-        # solve_all + assemble_dataset). With the indirect method the source
-        # strengths are kept so the radiation Kochin functions of the same
-        # solves give the far-field (energy-flux) damping, positive
-        # semidefinite by construction (anyhydro.green_function).  A direct
-        # solve (opt-in) has no source strengths and carries no far-field
-        # damping; policies that need it refuse (anyhydro.operators).
+        # solve_all + assemble_dataset). The details of the same solves give
+        # the radiation Kochin functions and from them the far-field
+        # (energy-flux) damping, positive semidefinite by construction
+        # (anyhydro.green_function): from the source strengths with the
+        # indirect method, from Green's identity on the hull potential with
+        # the direct method (which has no source strengths).
         method = settings.get("method", "indirect")
-        far_field = method == "indirect"
+        far_field = True
+        far_field_format = (FAR_FIELD_DAMPING_FORMAT if method == "indirect"
+                            else FAR_FIELD_DAMPING_GREEN_IDENTITY_FORMAT)
         n_theta = 0
         if far_field:
             all_vertices = np.vstack(
@@ -907,7 +911,17 @@ class CapytaineBackend(HydrodynamicsBackend):
                 if dof is None:
                     continue          # diffraction: no far-field damping needed
                 o = int(np.flatnonzero(omegas_req == float(res.problem.omega))[0])
-                kochin[o, label_index[dof]] = compute_kochin(res, theta)
+                if method == "indirect":
+                    kochin[o, label_index[dof]] = compute_kochin(res, theta)
+                else:
+                    # Green's identity on the physical hull; auxiliary lid panels excluded
+                    hull = np.asarray(res.problem.body.hull_mask)
+                    mesh_all = res.problem.body.mesh_including_lid
+                    kochin[o, label_index[dof]] = green_identity_kochin(
+                        mesh_all.faces_centers[hull], mesh_all.faces_normals[hull],
+                        mesh_all.faces_areas[hull], np.asarray(res.problem.boundary_condition)[hull],
+                        np.asarray(res.potential)[hull], theta,
+                        k=float(res.wavenumber), water_depth=float(request.water_depth))
             kochin = _finite("kochin_radiation", kochin)
             wavenumbers = np.asarray(result["wavenumber"].values, dtype=np.float64)
             damping_far = _finite(
@@ -1001,7 +1015,12 @@ class CapytaineBackend(HydrodynamicsBackend):
                 None if damping_far is None else
                 f"{FAR_FIELD_DAMPING_FORMAT}: (4 pi rho k/(omega D)) Re int H_i^* H_j dtheta "
                 f"from capytaine {_capytaine_version()} Kochin functions of the same "
-                f"radiation solves, {n_theta} uniform theta samples"),
+                f"radiation solves, {n_theta} uniform theta samples"
+                if method == "indirect" else
+                f"{far_field_format}: (4 pi rho k/(omega D)) Re int H_i^* H_j dtheta "
+                f"from Green's-identity Kochin functions (hull potential and normal "
+                f"velocity of the same capytaine {_capytaine_version()} direct radiation "
+                f"solves, centroid rule, auxiliary lid excluded), {n_theta} uniform theta samples"),
             backend="capytaine",
             backend_version=_capytaine_version(),
             backend_commit="unknown",

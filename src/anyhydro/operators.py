@@ -1452,7 +1452,7 @@ def derived_operators_from_dataset(
         _require("radiation_damping_far_field" in ds.data_vars,
                  DerivedOperatorError(
                      f"policy {policy!r} requires the dataset variable "
-                     "radiation_damping_far_field (indirect-method Capytaine adapter >= 0.5.0)"))
+                     "radiation_damping_far_field (Capytaine adapter >= 0.5.0 indirect, >= 0.5.3 direct)"))
         B_far_full = np.asarray(ds["radiation_damping_far_field"].values, dtype=np.float64)
         raw_B_far = np.einsum("ia,oij,jb->oab", P, B_far_full, P)
     av_policy = CORRECTION_RECIPROCAL_AVERAGE if policy in FAR_FIELD_POLICIES else policy

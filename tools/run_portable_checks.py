@@ -99,6 +99,11 @@ EXCLUDED_TEST_MODULES = {
         "the optional anyhydro[capytaine] extra. Remaining gate: backend "
         "qualification against real Capytaine artifacts."
     ),
+    "test_direct_far_field": (
+        "real Capytaine direct/indirect solves (optional anyhydro[capytaine] extra) and "
+        "imports test_capytaine_backend. Remaining gate: direct-method far-field "
+        "qualification against real Capytaine solves."
+    ),
     "test_excitation_source": (
         "module-level 'from anyloads import RegularWave' needs the optional "
         "anyhydro[sea-state] extra. Remaining gate: sea-state integration "
