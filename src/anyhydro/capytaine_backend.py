@@ -71,7 +71,7 @@ __all__ = [
     "SUPPORTED_SETTINGS",
 ]
 
-CAPYTAINE_ADAPTER_VERSION = "0.5.3"   # 0.5.3: far-field damping for method='direct' (Green's identity)
+CAPYTAINE_ADAPTER_VERSION = "0.6.0"   # 0.6.0: method "direct" is the default (direct-default programme D7)
 
 
 def _warn_reciprocity(dataset):
@@ -90,6 +90,10 @@ MAX_FAR_FIELD_THETA = 16384
 #: The only backend setting keys this adapter understands; unknown keys are
 #: refused instead of silently ignored.
 SUPPORTED_SETTINGS = ("method", "cache_dir", "auxiliary_lid_policy")
+#: BEM formulation used when the request names none.  "direct" since adapter 0.6.0: on the same panel
+#: mesh it agrees with OrcaWave to <= 0.3 % (A/B) where "indirect" deviated 5-11 %; evidence and the
+#: qualified scope in docs/CAPYTAINE_ADAPTER.md.  "indirect" remains available explicitly.
+DEFAULT_METHOD = "direct"
 
 # Tiny development budgets (this adapter is development-scoped). These are
 # the DEFAULT execution limits; explicit CapytaineExecutionLimits may admit
@@ -311,7 +315,7 @@ def _check_settings(settings: Mapping[str, Any]) -> dict:
         if out["method"] not in ("direct", "indirect"):
             raise CapabilityError(
                 f"unsupported method {out['method']!r}; this adapter supports "
-                "only 'indirect' (the default) and 'direct' (opt-in)")
+                "only 'direct' (the default) and 'indirect'")
         # An explicit 'indirect' is the default solve, but it stays in the
         # settings: the request (and so its hash, cache key and provenance)
         # differs from an unset method, and sharing one cache entry would
@@ -482,7 +486,7 @@ class CapytaineBackend(HydrodynamicsBackend):
             "finite_depth_prony_decomposition": PRONY_FIT_FORMAT,
             "green_function_imaginary_part": IMAGINARY_PART_FORMAT,
             "far_field_damping": (FAR_FIELD_DAMPING_FORMAT
-                                  if settings.get("method", "indirect") == "indirect"
+                                  if settings.get("method", DEFAULT_METHOD) == "indirect"
                                   else FAR_FIELD_DAMPING_GREEN_IDENTITY_FORMAT),
             "settings": dict(settings),
             "execution_limits": self._limits.as_dict(),
@@ -808,7 +812,7 @@ class CapytaineBackend(HydrodynamicsBackend):
         # (anyhydro.green_function): from the source strengths with the
         # indirect method, from Green's identity on the hull potential with
         # the direct method (which has no source strengths).
-        method = settings.get("method", "indirect")
+        method = settings.get("method", DEFAULT_METHOD)
         far_field = True
         far_field_format = (FAR_FIELD_DAMPING_FORMAT if method == "indirect"
                             else FAR_FIELD_DAMPING_GREEN_IDENTITY_FORMAT)

@@ -131,9 +131,9 @@ def test_adapter_direct_far_field_is_the_green_identity_route():
     assert ds.attrs["method"] == "direct"
     far = ds["radiation_damping_far_field"].values[0]
     assert np.linalg.eigvalsh(far)[0] >= -1e-12 * np.max(np.abs(far))
-    # indirect default keeps its own format and source text
-    default = CapytaineBackend().solve((body,), _dev_request())
-    assert "green-identity" not in default["radiation_damping_far_field"].attrs["source"]
+    # explicit indirect keeps its own format and source text
+    indirect = CapytaineBackend().solve((body,), _dev_request(backend_settings={"method": "indirect"}))
+    assert "green-identity" not in indirect["radiation_damping_far_field"].attrs["source"]
 
 
 def test_direct_far_field_is_translation_and_body_order_invariant():

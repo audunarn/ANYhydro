@@ -676,9 +676,9 @@ def make_prospective_source_study_case() -> SourceStudyCase:
         expected_backend_version="3.0.0",
         method=None,
         method_declaration=(
-            "unset method selects the pinned capytaine 3.0.0 default "
-            "solver configuration (BEMSolver default matrix engine); no "
-            "method override is declared"),
+            "unset method selects the ANYhydro Capytaine adapter's default "
+            "at run time (method 'direct' from adapter 0.6.0; every dataset "
+            "records the resolved method); no method override is declared"),
         admission_declaration=(
             "source admission requires the ACTUAL raw dataset attrs "
             "backend/backend_version to match the case-expected backend "

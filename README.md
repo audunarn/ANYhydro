@@ -72,7 +72,7 @@ Enforced development limits (typed `CapabilityError` beyond them):
 - unverified outward normals, non-wetted geometry and lids whose normals
   do not point DOWN (the pinned Capytaine lid convention): typed refusal,
   never silently flipped or clipped;
-- unknown backend settings: refused (supported: `method` = `indirect` default or opt-in `direct`, `cache_dir`, `auxiliary_lid_policy`).
+- unknown backend settings: refused (supported: `method` = `direct` (default since adapter 0.6.0) or `indirect`, `cache_dir`, `auxiliary_lid_policy`).
 
 The deterministic first-slice two-body wetted-hull/lid fixture (96 panels,
 analytically verified geometry) lives in `anyhydro.first_slice`; the

@@ -69,20 +69,35 @@ Verified against installed Capytaine 3.0.0 source (no guessing):
 - Unknown backend settings: `CapabilityError`. Supported keys:
   `method`, `cache_dir` (cache directory override) and `auxiliary_lid_policy`.
   Unknown keys are refused, not silently ignored.
-- `method` (adapter 0.5.2): `"indirect"` (the default; spelling it out gives the
-  same coefficients, under its own request hash and cache entry) or `"direct"` (opt-in). Any other string is refused with
-  `CapabilityError` (Capytaine itself would silently run the indirect method).
-  The BEM solver is built with the chosen method, so the finite-frequency and
-  the explicit omega=inf solves use the same formulation, and the dataset
-  records the resolved method in the `method` attribute. The direct method
-  returns no `radiation_damping_far_field`; derived-operator policies that need
-  it refuse such a dataset. Evidence (benchmark B3y, Y4/Y6): on the same barge
-  hull mesh the direct method agrees with OrcaWave to about 0.26 % of peak
-  (added mass/damping) and 0.71 % (excitation amplitude), where the indirect
-  method deviates by up to 5 % (U1) to 11 % (U0); the adapter equals plain
-  Capytaine to about 1e-10 of peak for both methods. Deep water, single body,
-  z = 0 lid only: finite depth, multibody and irregular-frequency behaviour of
-  the direct method are not yet qualified, so it stays opt-in.
+- `method` (adapter 0.6.0): `"direct"` is the default; `"indirect"` remains
+  available explicitly. Any other string is refused with `CapabilityError`
+  (Capytaine itself would silently run the indirect method). The BEM solver is
+  built with the chosen method, so the finite-frequency and the explicit
+  omega=inf solves use the same formulation; the dataset records the resolved
+  method in the `method` attribute (datasets from adapters before 0.5.2 carry
+  none). Both methods return `radiation_damping_far_field`: indirect from the
+  source Kochin functions, direct from Green's-identity Kochin functions of the
+  hull potential (format `anyhydro-green-identity-kochin-far-field-damping-v1`).
+- Why direct is the default (direct-default programme, evidence in
+  anymarine-evidence/anyhydro-direct-default-20261014 and
+  orcawave-benchmark-b-20261013/b3y). On the same panel meshes as OrcaWave:
+  B3 barge deep water A/B within 0.26 % of peak, excitation 0.71 % (indirect
+  5-11 %); finite depth 20 m and 50 m within 0.28 % / 0.88 %; two barges with a
+  10 m gap incl. the gap resonance within 0.33 % / 0.73 % (resonance peak 6.067
+  vs 6.069 s); infinite-frequency added mass 0.09 % (indirect 3.3 %); 30-120 s
+  0.08 %; the W5 two-box fixture with the submerged auxiliary lid within
+  0.66 % (indirect 7.9 %); a thin near-surface box converges (indirect fails);
+  far-field vs near-field damping <= 1 % for energetic modes. Cost as
+  indirect: identical peak memory; cold-run time within 2 % (adapter U0 and
+  plain U1 at 1 and 4 threads); warm reruns within 1 % except one plain U1
+  1-thread median at +6.8 % (240.8 vs 225.5 s, noisy single-thread runs).
+- Qualified scope and limits: same-mesh agreement shown for wavelengths of at
+  least ~0.3 x body length (T >= 4 s for the 77.6 m B3 barge); below that the
+  short-period oblique-roll excitation and the irregular-frequency band
+  (2.0-2.6 s for B3, lid required) are not qualified on the meshes used.
+  Finite depth needs kh > ~0.19 (validated Prony decomposition). Agreement
+  with OrcaWave on one discretisation is code-to-code verification, not
+  continuum accuracy.
 - Execution limits: `CapytaineExecutionLimits` (see below). Bool,
   fractional, non-finite, negative, zero and unknown limit controls raise
   `CapabilityError` at construction — before any Capytaine import or
@@ -139,7 +154,7 @@ From adapter 0.5.0 the indirect method also returns `radiation_damping_far_field
 the request grid carries a uniform heading coordinate (at least 720 headings,
 more when 4 k R exceeds that for the largest wavenumber and horizontal radius R),
 so Capytaine keeps the source strengths and evaluates the radiation Kochin
-functions from the same solves. The direct method returns no far-field damping.
+functions from the same solves. From adapter 0.5.3 the direct method returns it too, from Green's-identity Kochin functions of the hull potential.
 
 ## Cache
 

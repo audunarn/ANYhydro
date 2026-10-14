@@ -102,7 +102,8 @@ def test_single_body_solve_uses_the_unprefixed_capytaine_dofs():
     mesh = cpt.Mesh(vertices=np.array(body.mesh.vertices), faces=_face_lists(body.mesh.faces, body.mesh.face_sizes))
     direct_body = cpt.FloatingBody(mesh, dofs=cpt.rigid_body_dofs(rotation_center=tuple(body.rotation_center)))
     order = ("Surge", "Sway", "Heave", "Roll", "Pitch", "Yaw")
-    results = cpt.BEMSolver().solve_all([cpt.RadiationProblem(body=direct_body, omega=1.0, radiating_dof=d,
+    # the adapter's default method (direct since adapter 0.6.0) on the upstream kernel
+    results = cpt.BEMSolver(method=cb.DEFAULT_METHOD).solve_all([cpt.RadiationProblem(body=direct_body, omega=1.0, radiating_dof=d,
                                                               rho=1025.0, g=9.81) for d in order])
     direct = {(r.radiating_dof, d): r.added_mass[d] for r in results for d in order}
     expected = np.array([[direct[(rad, inf)] for rad in order] for inf in order])
@@ -332,7 +333,7 @@ class TestDirectCapytaineComparison:
         )
         # same documented Green function as the adapter (anyhydro.green_function)
         from anyhydro.green_function import anyhydro_green_function
-        solver = cpt.BEMSolver(green_function=anyhydro_green_function())
+        solver = cpt.BEMSolver(green_function=anyhydro_green_function(), method=cb.DEFAULT_METHOD)
         direct = solver.fill_dataset(
             matrix, combined, n_jobs=1, n_threads=1, progress_bar=False,
             hydrostatics=False,
@@ -471,7 +472,7 @@ class TestCache:
         with np.errstate(invalid="ignore", divide="ignore"):
             combined = cpt.Multibody(cpt_bodies, name="direct")
         labels = [f"{b.body_id}__{cb._CPT_DOF_NAME[d]}" for b in bodies for d in cb._CPT_DOF_NAME]
-        solver = cpt.BEMSolver()   # upstream default kernel
+        solver = cpt.BEMSolver(method=cb.DEFAULT_METHOD)   # upstream default kernel, the adapter's method
         for io, omega in enumerate(request.omegas):
             for j, rad in enumerate(labels):
                 r = solver.solve(cpt.RadiationProblem(
@@ -492,7 +493,7 @@ def test_adapter_records_the_reciprocity_diagnostic():
     dataset = CapytaineBackend().solve((body,), _dev_request())
     stored = json.loads(dataset.attrs["reciprocity_diagnostic"])
     assert stored == json.loads(json.dumps(dataset_reciprocity(dataset)))
-    assert dataset.attrs["adapter_version"] == cb.CAPYTAINE_ADAPTER_VERSION == "0.5.3"
+    assert dataset.attrs["adapter_version"] == cb.CAPYTAINE_ADAPTER_VERSION == "0.6.0"
 
 
 def test_reciprocity_warning_on_fresh_and_cached_solves_points_at_the_caller(tmp_path, monkeypatch):
@@ -538,16 +539,25 @@ def test_unsupported_method_refused_before_any_solve(method, monkeypatch):
         CapytaineBackend().solve((_box_body("alpha", ALPHA_CENTER),), _dev_request(backend_settings={"method": method}))
 
 
-def test_explicit_indirect_is_the_default_solve():
+def test_unset_method_is_the_direct_solve():
+    """Adapter 0.6.0: the default is the direct method (and its Green's-identity far field)."""
+    assert cb.DEFAULT_METHOD == "direct"
     body = _box_body("alpha", ALPHA_CENTER)
     request = dict(include_infinite_frequency=True)
     default = CapytaineBackend().solve((body,), _dev_request(**request))
-    explicit = CapytaineBackend().solve((body,), _dev_request(backend_settings={"method": "indirect"}, **request))
-    assert default.attrs["method"] == explicit.attrs["method"] == "indirect"
+    explicit = CapytaineBackend().solve((body,), _dev_request(backend_settings={"method": "direct"}, **request))
+    assert default.attrs["method"] == explicit.attrs["method"] == "direct"
     assert set(default.data_vars) == set(explicit.data_vars)
-    assert "radiation_damping_far_field" in default.data_vars
+    assert "green-identity" in default["radiation_damping_far_field"].attrs["source"]
     for name in default.data_vars:
         assert np.array_equal(default[name].values, explicit[name].values), name
+
+
+def test_explicit_indirect_remains_available():
+    body = _box_body("alpha", ALPHA_CENTER)
+    ds = CapytaineBackend().solve((body,), _dev_request(backend_settings={"method": "indirect"}))
+    assert ds.attrs["method"] == "indirect"
+    assert "green-identity" not in ds["radiation_damping_far_field"].attrs["source"]
 
 
 def _plain_capytaine(body, method, omega):
@@ -571,7 +581,8 @@ def test_direct_method_matches_plain_capytaine_including_infinite_frequency():
     body = _box_body("alpha", ALPHA_CENTER)
     direct = CapytaineBackend().solve(
         (body,), _dev_request(include_infinite_frequency=True, backend_settings={"method": "direct"}))
-    indirect = CapytaineBackend().solve((body,), _dev_request(include_infinite_frequency=True))
+    indirect = CapytaineBackend().solve((body,), _dev_request(include_infinite_frequency=True,
+                                                              backend_settings={"method": "indirect"}))
     assert direct.attrs["method"] == "direct"
     # no source strengths: far-field damping comes from Green's identity (adapter 0.5.3)
     assert "green-identity" in direct["radiation_damping_far_field"].attrs["source"]
@@ -600,7 +611,7 @@ def test_direct_dataset_persists_and_hashes_identically(tmp_path):
     save_hydro_dataset(fresh, path)
     assert dataset_content_hash(load_hydro_dataset(path)) == dataset_content_hash(fresh)
     # a cached indirect solve of the same request is a different identity
-    other = backend.solve((body,), _dev_request(backend_settings={"cache_dir": str(tmp_path / "cache")}))
+    other = backend.solve((body,), _dev_request(backend_settings={"cache_dir": str(tmp_path / "cache"), "method": "indirect"}))
     assert other.attrs["method"] == "indirect"
 
 
