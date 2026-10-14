@@ -43,6 +43,24 @@ asymptotic form. `validated_delhommeau()` injects it through
 function settings. The production Capytaine backend uses it (adapter 0.3.0;
 cache identity includes the method).
 
+Format v2 (`anyhydro-validated-prony-v2`, 2026-10-14). The v1 Prony candidates
+(linear prediction on 4m+1 samples) are erratic in the number of terms and
+refused whole kh bands although accurate fits exist: kh 0.12-0.36, 0.42, 0.58
+and 1.80-2.40 (except 2.15) on 0.01-0.05 scans, e.g. a 77.6 m barge at 20 m
+depth at T = 6 s (kh 2.28) or 30 s (kh 0.30). Where every v1 candidate is
+refused, v2 tries a deterministic fallback: fixed geometric grids of decay
+rates (8-40 terms, slowest |lam| 0.003/0.01/0.03, fastest 19.99) with
+least-squares amplitudes on 4001 + 800 points of [-0.1, 20] and the tail
+[20, 60] at SVD cut-offs 1e-14, 1e-12, 1e-10, 1e-8, accepted by the same
+target/acceptance rules plus an amplitude bound max |a| <= 1e4 (no cancelling
+amplitudes). Every kh accepted by v1 keeps its v1 decomposition bit for bit; the
+record carries `method` (`prony-linear-prediction-v1` or
+`geometric-grid-lstsq-v1`). Scan kh 0.11-1 and 1-5 step 0.01, 5-30 step 0.05
+(992 values): v1 accepts 910, the fallback 73 (12-40 terms), 9 refused, all
+kh <= 0.19.
+Kernels built from fallback fits meet the same free-surface (Robin) and
+John-series checks as v1 fits (tests/test_prony_fit.py).
+
 Evidence (C:/ANYworkspaceWork/anymarine-evidence/w5-prony-attribution-20261012):
 
 | | Robin ratios hull / lid | max field error vs exact |
@@ -67,7 +85,11 @@ retained W5 coupled point 03c, which therefore have another cause.
   `ref(x) ~ (4 kh tanh kh - A)/x` that no exponential sum represents beyond the
   fit range (upstream or validated). Measured with the validated fit: field
   error <= ~2e-4 and nearest-surface Robin ratio 1.0–1.3 at kh = 1–3.
-* kh <= 0.3 is refused (best 30-term fit 4e-3); Capytaine refuses kh <= 0.1.
+* 0.1 < kh <= ~0.19 is refused (v2). `F` has a second pole at x = -kh close to
+  the fit start x = -0.1; the deterministic candidate family either exceeds
+  5e-4 or needs amplitudes above the bound there. This is a refusal of the
+  candidate family, not a proof that no admissible fit exists (kh 0.20-0.22
+  became admissible only with SVD truncation). Capytaine refuses kh <= 0.1.
 * The artifact-bound W5 reference profile still binds the frozen original
   producer coefficients by design; comparisons against that reference inherit
   its fit error.

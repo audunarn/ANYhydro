@@ -199,3 +199,68 @@ def test_validated_green_function_pickles_for_parallel_solves():
     assert hash(clone) == hash(gf)
     np.testing.assert_array_equal(clone.find_best_exponential_decomposition(34.4),
                                   pf.validated_decomposition(34.4).as_array())
+
+
+# ---- v2: geometric-grid fallback where v1 refuses (2026-10-14) ----
+V1_REFUSED_NOW_ADMITTED = [0.30, 0.42, 0.58, 1.90, 2.10, 2.28]
+
+
+@pytest.mark.parametrize('kh', V1_REFUSED_NOW_ADMITTED)
+def test_v1_refusals_are_admitted_by_the_grid_fallback_within_the_same_rules(kh):
+    assert not pf._accepted(pf._prony_decomposition(kh))          # v1 alone refuses
+    d = pf.validated_decomposition(kh)
+    assert d.method == pf.FIT_METHOD_GRID
+    assert max(d.max_abs_error, d.tail_max_abs_error) <= pf.ACCEPT_MAX_ABS_ERROR
+    assert np.max(np.abs(d.amp)) <= pf.GRID_AMP_BOUND
+    assert all(-20.0 < v < 0.0 for v in d.lam)
+    rec = d.record()
+    assert rec['method'] == pf.FIT_METHOD_GRID and rec['format'] == pf.PRONY_FIT_FORMAT
+
+
+@pytest.mark.parametrize('kh', [0.5, 1.0, 3.0, 10.0, 34.4])
+def test_v1_accepted_decompositions_are_unchanged(kh):
+    d = pf.validated_decomposition(kh)
+    v1 = pf._prony_decomposition(kh)
+    assert d.method == pf.FIT_METHOD_PRONY
+    assert d.lam == v1.lam and d.amp == v1.amp
+
+
+@pytest.mark.parametrize('kh', [0.12, 0.15, 0.19])
+def test_lowest_kh_next_to_the_second_pole_is_refused(kh):
+    """F has a pole at x = -kh close to X_MIN = -0.1; the candidate family refuses rather than degrades."""
+    with pytest.raises(CapabilityError, match='no validated Prony decomposition'):
+        pf.validated_decomposition(kh)
+
+
+@pytest.mark.parametrize('kh', [0.20, 0.22])
+def test_low_kh_admitted_by_truncated_least_squares_within_the_amplitude_bound(kh):
+    """Review (Sol r1): an SVD cut-off avoids cancelling amplitudes that the bound would reject."""
+    d = pf.validated_decomposition(kh)
+    assert d.method == pf.FIT_METHOD_GRID
+    assert max(d.max_abs_error, d.tail_max_abs_error) <= pf.ACCEPT_MAX_ABS_ERROR
+    assert np.max(np.abs(d.amp)) <= pf.GRID_AMP_BOUND
+
+
+@pytest.mark.parametrize('kh', [0.30, 2.28])
+def test_capytaine_kernel_with_a_grid_fallback_fit_satisfies_the_free_surface_condition(kh):
+    """Same physical check as the v1 test above, at kh values only the fallback admits."""
+    cpt = pytest.importorskip('capytaine')
+    import check_finite_depth_john_oracle as oracle
+    assert pf.validated_decomposition(kh).method == pf.FIT_METHOD_GRID
+    h = 10.0
+    k = kh / h
+    tri, receivers = _surface_case()
+    mesh = cpt.Mesh(vertices=tri, faces=np.array([[0, 1, 2, 2]])).with_quadrature('Gauss-Legendre 2')
+    opts = dict(tabulation_nr=0, tabulation_nz=0, tabulation_cache_dir=None,
+                gf_singularities='low_freq', floating_point_precision='float64')
+    nu = k * math.tanh(kh)
+    S, K = pf.validated_delhommeau(cpt, **opts).evaluate(
+        receivers, mesh, free_surface=0.0, water_depth=h, wavenumber=k, adjoint_double_layer=True,
+        early_dot_product=False, diagonal_term_in_double_layer=False)
+    s, kz = np.real(S)[:, 0], np.real(K)[2, :, 0]
+    ratio = np.abs(kz - nu * s) / (1e-9 + 1e-4 * np.maximum(np.abs(kz), np.abs(nu * s)))
+    assert np.all(ratio < 0.5)
+    kern = oracle.FiniteDepthKernel(k, h)
+    qp, qw = mesh.quadrature_points
+    exact = -1 / (4 * math.pi) * (kern.green(receivers, qp[0])[0] * qw[0][None, :]).sum(1)
+    assert np.max(np.abs(s - exact) / np.abs(exact)) < 1e-4

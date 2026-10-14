@@ -14,6 +14,16 @@ up to 31 % at deep receivers for kh = 34.4).
 This module replaces that step with a deterministic fit that is accepted
 only on a measured maximum pointwise error over a dense grid, and refuses
 otherwise.  Capytaine is imported lazily (never at base import time).
+
+Format v2 (2026-10-14): where the v1 linear-prediction (Prony) candidates
+are all refused, a fallback family of fixed geometric decay-rate grids with
+least-squares amplitudes on a dense grid (fit range plus tail) is tried and
+accepted by the same error rules plus an amplitude bound (no large
+cancelling amplitudes).  Every kh accepted by v1 keeps its v1 decomposition
+unchanged.  Remaining refusals at the lowest kh are refusals of this
+deterministic candidate family, not a proof of impossibility: the second
+pole of ``F`` at ``x = -kh`` approaches ``X_MIN``, and the candidates either
+exceed ``ACCEPT_MAX_ABS_ERROR`` or need amplitudes above the bound.
 """
 from __future__ import annotations
 
@@ -26,7 +36,7 @@ import numpy as np
 
 from .errors import CapabilityError
 
-PRONY_FIT_FORMAT = 'anyhydro-validated-prony-v1'
+PRONY_FIT_FORMAT = 'anyhydro-validated-prony-v2'   # v2: geometric-grid fallback where v1 refuses
 X_MIN = -0.1
 X_MAX = 20.0
 TAIL_MAX = 60.0
@@ -37,6 +47,14 @@ VALIDATION_POINTS = 8001
 POLE_WINDOW = 0.02     # decimal evaluation within this distance of x = kh
 MIN_KH = 0.1          # Capytaine's own lower limit for the finite-depth route
 MAX_KH = 1e5          # at and above this Capytaine uses its asymptotic form
+FIT_METHOD_PRONY = 'prony-linear-prediction-v1'
+FIT_METHOD_GRID = 'geometric-grid-lstsq-v1'
+GRID_TERMS = tuple(range(8, 41, 2))
+GRID_SLOWEST = (0.003, 0.01, 0.03)  # slowest decay rate |lam| of the grid
+GRID_FASTEST = 19.99                 # fastest |lam| (Capytaine keeps -20 < lam < 0)
+GRID_FIT_POINTS = (4001, 801)        # dense least-squares samples on the fit range and the tail
+GRID_AMP_BOUND = 1e4                 # refuse cancelling amplitudes larger than this
+GRID_RCOND = (1e-14, 1e-12, 1e-10, 1e-8)   # SVD cut-offs: truncation trades cancelling amplitudes for error
 
 
 @dataclass(frozen=True)
@@ -49,13 +67,14 @@ class PronyDecomposition:
     max_abs_error: float
     rms_error: float
     tail_max_abs_error: float
+    method: str = FIT_METHOD_PRONY
 
     def as_array(self):
         """Capytaine layout: row 0 growth rates, row 1 amplitudes."""
         return np.array([self.lam, self.amp], dtype=np.float64)
 
     def record(self):
-        return dict(format=PRONY_FIT_FORMAT, kh=self.kh,
+        return dict(format=PRONY_FIT_FORMAT, kh=self.kh, method=self.method,
                     route='asymptotic' if self.kh >= MAX_KH else 'finite_depth',
                     n_exp=len(self.lam),
                     n_samples=self.n_samples, max_abs_error=self.max_abs_error,
@@ -184,8 +203,57 @@ def validated_decomposition(kh):
     return _validated_decomposition(min(kh, MAX_KH))
 
 
+def _grid_candidates(kh):
+    """Fallback: fixed geometric decay-rate grids, least-squares amplitudes on a dense
+    grid of the fit range and the tail; deterministic, fewest terms first."""
+    xs = np.concatenate([np.linspace(X_MIN, X_MAX, GRID_FIT_POINTS[0]),
+                         np.linspace(X_MAX, TAIL_MAX, GRID_FIT_POINTS[1])[1:]])
+    f = reference_function(xs, kh)
+    for n in GRID_TERMS:
+        for slowest in GRID_SLOWEST:
+            lam = -np.geomspace(slowest, GRID_FASTEST, n)
+            basis = np.exp(np.outer(xs, lam))
+            for rcond in GRID_RCOND:
+                amp, *_ = np.linalg.lstsq(basis, f, rcond=rcond)
+                if not np.all(np.isfinite(amp)) or np.max(np.abs(amp)) > GRID_AMP_BOUND:
+                    continue
+                mx, rms, tail = _errors(lam, amp, kh)
+                yield PronyDecomposition(kh, tuple(float(v) for v in lam), tuple(float(v) for v in amp),
+                                         xs.size, mx, rms, tail, FIT_METHOD_GRID)
+
+
+def _select(candidates):
+    """Fewest-term candidate meeting the target, else the best one (None if there is none)."""
+    best = None
+    for cand in candidates:
+        worst = max(cand.max_abs_error, cand.tail_max_abs_error)
+        if worst <= TARGET_MAX_ABS_ERROR:
+            return cand
+        if best is None or worst < max(best.max_abs_error, best.tail_max_abs_error):
+            best = cand
+    return best
+
+
+def _accepted(cand):
+    return cand is not None and max(cand.max_abs_error, cand.tail_max_abs_error) <= ACCEPT_MAX_ABS_ERROR
+
+
 @lru_cache(maxsize=256)
 def _validated_decomposition(kh):
+    v1 = _prony_decomposition(kh)
+    if _accepted(v1):
+        return v1                      # every kh accepted by v1 keeps its v1 fit
+    grid = _select(_grid_candidates(kh))
+    if _accepted(grid):
+        return grid
+    found = [max(c.max_abs_error, c.tail_max_abs_error) for c in (v1, grid) if c is not None]
+    best = f'{min(found):.3e}' if found else 'none'
+    raise CapabilityError(
+        f'no validated Prony decomposition for kh={kh}: best max error {best} > {ACCEPT_MAX_ABS_ERROR}')
+
+
+def _prony_decomposition(kh):
+    """v1: linear-prediction Prony candidates; the fewest-term one meeting the target, else the best."""
     best = None
     for m in N_EXP_RANGE:
         n = 4 * m + 1
@@ -204,11 +272,6 @@ def _validated_decomposition(kh):
             return cand
         if best is None or worst < max(best.max_abs_error, best.tail_max_abs_error):
             best = cand
-    if best is None or max(best.max_abs_error, best.tail_max_abs_error) > ACCEPT_MAX_ABS_ERROR:
-        found = 'none' if best is None else f'{max(best.max_abs_error, best.tail_max_abs_error):.3e}'
-        raise CapabilityError(
-            f'no validated Prony decomposition for kh={kh}: best max error {found} '
-            f'> {ACCEPT_MAX_ABS_ERROR}')
     return best
 
 
