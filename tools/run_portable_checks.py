@@ -84,6 +84,7 @@ PORTABLE_TEST_MODULES = (
     "test_thin_sheet_galerkin_fs",
     "test_thin_sheet_kernels",
     "test_transform",
+    "test_vessel_study",
 )
 
 # Test modules excluded from portable base CI, each with its concrete
@@ -115,7 +116,7 @@ EXCLUDED_TEST_MODULES = {
         "imports test_capytaine_backend. Remaining gate: ADR-015 L6-4 hydrostatic contract "
         "evidence against real Capytaine solves."
     ),
-    "test_vessel_study": (
+    "test_vessel_study_run": (
         "real Capytaine solves (optional anyhydro[capytaine] extra) and imports "
         "test_capytaine_backend. Remaining gate: ADR-015 L6-4 vessel source campaign "
         "after the ANYmarine L6-F2 gate."
