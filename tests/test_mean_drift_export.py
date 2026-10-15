@@ -192,3 +192,12 @@ def test_schema_refuses_foreign_drift_dofs_units_and_coarse_theta(exported):
         validate_hydro_dataset(coarse)
     with pytest.raises(SchemaError, match="scalar 'rho'"):
         validate_hydro_dataset(exported.assign(rho=np.float64(1000.0)))
+
+
+def test_dispersion_check_admits_newton_wavenumbers_but_refuses_wrong_ones():
+    from anyhydro.schema import validate_hydro_dataset
+    ds = _solve({"kochin": "export", "method": "direct"}, depth=3.0)
+    k = ds["wavenumber"].values
+    validate_hydro_dataset(ds.assign(wavenumber=("omega", k * (1 + 1e-10))))     # Newton-level differences
+    with pytest.raises(SchemaError, match="dispersion"):
+        validate_hydro_dataset(ds.assign(wavenumber=("omega", k * (1 + 1e-6))))

@@ -24,6 +24,7 @@ from .surfaces import SURFACE_IDENTITY_ATTR, SURFACE_DATASET_SCHEMA, surface_ide
 SCHEMA_VERSION = "1.1.0"
 #: emitted only by datasets carrying the opt-in Kochin export or far-field mean drift (docs/MEAN_DRIFT_CONTRACT.md)
 KOCHIN_SCHEMA_VERSION = "1.3.0"
+KOCHIN_WAVENUMBER_RTOL = 1e-8     # dispersion check in k (Capytaine's Newton solve)
 KOCHIN_MIN_THETA = 720            # far_field_theta_count minimum (docs/MEAN_DRIFT_CONTRACT.md section 2)
 MEAN_DRIFT_UNITS = "N/m^2 (surge, sway), N.m/m^2 (yaw) per unit wave amplitude squared"
 KOCHIN_EXTENSION_VARIABLES = ("kochin_radiation", "kochin_diffraction", "wavenumber", "mean_drift_far_field",
@@ -266,11 +267,13 @@ def validate_kochin_extension(ds: xr.Dataset) -> None:
         _require(name in ds.data_vars and ds[name].dims == () and ds[name].dtype == np.float64
                  and float(ds[name].values) == value,
                  f"scalar {name!r} must be float64 and equal the wave_environment value")
+    # the stored wavenumbers are the ones the BEM used; Capytaine solves the finite-depth dispersion relation by
+    # Newton iteration (SciPy default tolerance), observed within 1e-10 of the exact root - checked in k to 1e-8
+    from .green_function import solve_wavenumber
     k = ds["wavenumber"].values
-    omega = ds["omega"].values
-    rhs = g * k * (np.tanh(k * depth) if np.isfinite(depth) else 1.0)
-    _require(bool(np.all(k > 0)) and bool(np.allclose(omega ** 2, rhs, rtol=1e-12, atol=0.0)),
-             "wavenumber violates the dispersion relation w^2 = g k tanh(kh)")
+    exact = np.array([solve_wavenumber(float(w), g, depth) for w in ds["omega"].values])
+    _require(bool(np.all(k > 0)) and bool(np.all(np.abs(k - exact) <= KOCHIN_WAVENUMBER_RTOL * exact)),
+             f"wavenumber violates the dispersion relation w^2 = g k tanh(kh) (relative {KOCHIN_WAVENUMBER_RTOL:g} in k)")
     export = _json_attr(ds, "kochin_export")
     _require(isinstance(export, dict) and {"route", "reference_point", "theta_count"} <= set(export)
              and export["reference_point"] == [0.0, 0.0] and int(export["theta_count"]) == n,
