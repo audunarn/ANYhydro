@@ -117,6 +117,13 @@ def shift_dataset_reference_point(
     ``reference_transformations`` attribute.
     """
     validate_hydro_dataset(ds)
+    # Kochin export / far-field drift: world-origin Kochin data and a yaw reference that a reference shift would
+    # silently invalidate (docs/MEAN_DRIFT_CONTRACT.md section 5) - refused before any mutation.
+    kochin_present = [name for name in ("kochin_radiation", "kochin_diffraction", "wavenumber", "mean_drift_far_field")
+                      if name in ds.data_vars]
+    if kochin_present:
+        raise TransformError(
+            f"reference shift refused: variables {kochin_present} have no defined mapping under a reference shift")
 
     bodies = [str(b) for b in ds["body"].values.tolist()]
     if set(new_rotation_centers) != set(bodies):

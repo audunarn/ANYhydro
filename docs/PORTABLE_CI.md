@@ -71,6 +71,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_hydrostatic_contract | hydrostatic composition contracts |
 | test_imports | base-import isolation (no optional Capytaine/Qt at import time) |
 | test_linux_owned_process | Linux process ownership (skips on Windows) |
+| test_mean_drift | far-field mean drift formulas, FFT derivative, MacCamy-Fuchs/Havelock cylinder anchor (scipy, no BEM) |
 | test_owned_process | owned process lifecycle (stdlib subprocess) |
 | test_panel_accuracy_reference | panel accuracy reference contracts (mock Capytaine) |
 | test_panel_integration_candidate | panel integration candidate admission (mocked backend) |
@@ -112,6 +113,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_capytaine_backend | `TestDirectCapytaineComparison` executes real Capytaine solves needing the optional `anyhydro[capytaine]` extra | backend qualification against real Capytaine artifacts |
 | test_direct_finite_depth | real Capytaine direct solves needing the optional `anyhydro[capytaine]` extra; uses the John-series oracle in `tools/` | direct-method finite-depth qualification against real Capytaine solves |
 | test_direct_far_field | real Capytaine direct/indirect solves needing the optional `anyhydro[capytaine]` extra; imports `test_capytaine_backend` | direct-method far-field qualification against real Capytaine solves |
+| test_mean_drift_export | real Capytaine Kochin-export solves needing the optional `anyhydro[capytaine]` extra; imports `test_capytaine_backend` | MD2 mean-drift validation evidence (V2-V5) against real Capytaine solves |
 | test_excitation_source | module-level `from anyloads import RegularWave` needs the optional `anyhydro[sea-state]` extra | sea-state integration qualification with ANYloads |
 | test_sea_excitation | module-level ANYloads imports need the optional `anyhydro[sea-state]` extra | sea-state integration qualification with ANYloads |
 | test_hams_backend | module-level `anyfileio.hams` import plus stored native HAMS output fixtures; native producers must never be executed to make unit tests pass | HAMS lifecycle qualification with stored outputs and ANYfileio |

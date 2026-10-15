@@ -62,6 +62,8 @@ UNSUPPORTED_UNDER_REFRAME = (
     "free_surface_elevation",
     "kochin_radiation",
     "kochin_diffraction",
+    "wavenumber",
+    "mean_drift_far_field",
 )
 
 # Optional force splits that ARE recognized generalized forces in the DOF

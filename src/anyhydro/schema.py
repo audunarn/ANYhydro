@@ -22,6 +22,12 @@ from .records import HydroBody, HydroRequest
 from .surfaces import SURFACE_IDENTITY_ATTR, SURFACE_DATASET_SCHEMA, surface_identity, validate_surface_dataset
 
 SCHEMA_VERSION = "1.1.0"
+#: emitted only by datasets carrying the opt-in Kochin export or far-field mean drift (docs/MEAN_DRIFT_CONTRACT.md)
+KOCHIN_SCHEMA_VERSION = "1.3.0"
+KOCHIN_MIN_THETA = 720            # far_field_theta_count minimum (docs/MEAN_DRIFT_CONTRACT.md section 2)
+MEAN_DRIFT_UNITS = "N/m^2 (surge, sway), N.m/m^2 (yaw) per unit wave amplitude squared"
+KOCHIN_EXTENSION_VARIABLES = ("kochin_radiation", "kochin_diffraction", "wavenumber", "mean_drift_far_field",
+                              "water_depth", "rho", "g")
 
 PHASOR_CONVENTION = "x(t) = Re{X * exp(-i*omega*t)}"
 HEADING_CONVENTION = "wave propagation direction from +X toward +Y, radians"
@@ -53,6 +59,12 @@ OPTIONAL_VARIABLES: Mapping[str, tuple] = {
     "froude_krylov_force": (("omega", "wave_direction", "influenced_dof"), "complex"),
     "diffraction_force": (("omega", "wave_direction", "influenced_dof"), "complex"),
     "mean_drift_force": (("omega", "wave_direction", "influenced_dof"), "complex"),
+    # schema 1.3.0 Kochin export / far-field mean drift (validated by validate_kochin_extension)
+    "wavenumber": (("omega",), "float"),
+    "mean_drift_far_field": (("omega", "wave_direction", "drift_dof"), "float"),
+    "rho": ((), "float"),
+    "g": ((), "float"),
+    "water_depth": None,          # may be +inf (deep water); checked by validate_kochin_extension
     # dims not fixed by this schema version; only finiteness is checked
     "panel_pressure": None,
     "pressure_jump": None,
@@ -207,6 +219,78 @@ def _validate_body_identity(
             )
 
 
+def _json_attr(ds: xr.Dataset, name: str):
+    value = ds.attrs.get(name)
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise SchemaError(f"attribute {name!r} is not valid JSON: {exc}") from exc
+    return value
+
+
+def validate_kochin_extension(ds: xr.Dataset) -> None:
+    """Schema 1.3.0: opt-in Kochin export and far-field mean drift (docs/MEAN_DRIFT_CONTRACT.md)."""
+    # kochin_radiation/kochin_diffraction were already optional (free dims) before 1.3.0: legacy datasets keep them
+    present = [name for name in KOCHIN_EXTENSION_VARIABLES
+               if name in ds.data_vars and name not in ("kochin_radiation", "kochin_diffraction")]
+    if ds.attrs.get("schema_version") != KOCHIN_SCHEMA_VERSION:
+        _require(not present, f"variables {present} require schema_version {KOCHIN_SCHEMA_VERSION!r}")
+        return
+    _require("surface_identity" not in ds.attrs,
+             "the Kochin export is not available for surface datasets (schema 1.2.0) yet")
+    for name in ("kochin_radiation", "kochin_diffraction", "wavenumber"):
+        _require(name in ds.data_vars, f"schema {KOCHIN_SCHEMA_VERSION} requires {name!r}")
+    _require("theta" in ds.coords, "schema 1.3.0 requires the coordinate 'theta'")
+    theta = np.asarray(ds["theta"].values)
+    n = theta.size
+    _require(ds["theta"].dtype == np.float64 and theta.ndim == 1 and n >= KOCHIN_MIN_THETA,
+             f"coordinate 'theta' must be a 1-D float64 grid of at least {KOCHIN_MIN_THETA} samples")
+    _require(bool(np.allclose(theta, 2.0 * np.pi * np.arange(n) / n, rtol=0.0, atol=1e-12)),
+             "coordinate 'theta' must be the uniform periodic grid 2 pi j / N")
+    for name, dims in (("kochin_radiation", ("omega", "radiating_dof", "theta")),
+                       ("kochin_diffraction", ("omega", "wave_direction", "theta"))):
+        _require(tuple(ds[name].dims) == dims and ds[name].dtype == np.complex128,
+                 f"variable {name!r} must be complex128 with dims {dims}")
+        _check_finite(ds[name], name)
+    _require(tuple(ds["wavenumber"].dims) == ("omega",) and ds["wavenumber"].dtype == np.float64,
+             "variable 'wavenumber' must be float64 with dims ('omega',)")
+    _check_finite(ds["wavenumber"], "wavenumber")
+    env = _json_attr(ds, "wave_environment")
+    _require(isinstance(env, dict) and set(env) == {"water_depth", "rho", "g"},
+             "attribute 'wave_environment' must hold water_depth, rho and g")
+    depth = np.inf if env["water_depth"] == "inf" else float(env["water_depth"])
+    g = float(env["g"])
+    _require(depth > 0 and float(env["rho"]) > 0 and g > 0, "wave_environment values must be positive")
+    for name, value in (("water_depth", depth), ("rho", float(env["rho"])), ("g", g)):
+        _require(name in ds.data_vars and ds[name].dims == () and ds[name].dtype == np.float64
+                 and float(ds[name].values) == value,
+                 f"scalar {name!r} must be float64 and equal the wave_environment value")
+    k = ds["wavenumber"].values
+    omega = ds["omega"].values
+    rhs = g * k * (np.tanh(k * depth) if np.isfinite(depth) else 1.0)
+    _require(bool(np.all(k > 0)) and bool(np.allclose(omega ** 2, rhs, rtol=1e-12, atol=0.0)),
+             "wavenumber violates the dispersion relation w^2 = g k tanh(kh)")
+    export = _json_attr(ds, "kochin_export")
+    _require(isinstance(export, dict) and {"route", "reference_point", "theta_count"} <= set(export)
+             and export["reference_point"] == [0.0, 0.0] and int(export["theta_count"]) == n,
+             "attribute 'kochin_export' must record route, world-origin reference_point and theta_count")
+    if "mean_drift_far_field" in ds.data_vars:
+        _require(tuple(ds["mean_drift_far_field"].dims) == ("omega", "wave_direction", "drift_dof")
+                 and ds["mean_drift_far_field"].dtype == np.float64,
+                 "variable 'mean_drift_far_field' must be float64 with dims (omega, wave_direction, drift_dof)")
+        _check_finite(ds["mean_drift_far_field"], "mean_drift_far_field")
+        dofs = [str(v) for v in ds["drift_dof"].values]
+        bodies = [str(b) for b in ds["body"].values]
+        _require(len(bodies) == 1 and dofs == [f"{bodies[0]}::{d}" for d in ("surge", "sway", "yaw")],
+                 "coordinate 'drift_dof' must be the dataset body's qualified (surge, sway, yaw)")
+        meta = _json_attr(ds, "mean_drift_far_field")
+        _require(isinstance(meta, dict) and meta.get("method") == "far_field_momentum_conservation"
+                 and meta.get("units") == MEAN_DRIFT_UNITS
+                 and isinstance(meta.get("motions"), dict) and meta["motions"].get("motion_hash"),
+                 "attribute 'mean_drift_far_field' must record the method, the units and the motion provenance")
+
+
 def validate_hydro_dataset(ds: xr.Dataset) -> xr.Dataset:
     """Validate a dataset against the canonical schema.
 
@@ -320,16 +404,18 @@ def validate_hydro_dataset(ds: xr.Dataset) -> xr.Dataset:
                 f"variable {name!r} must have dims {spec[0]}, got {tuple(ds[name].dims)}",
             )
             _check_finite(ds[name], name)
-        else:
+        elif name != "water_depth":       # +inf is deep water; validate_kochin_extension checks it
             _check_finite(ds[name], name)
 
     for name in MANDATORY_ATTRS:
         _require(name in ds.attrs, f"missing mandatory dataset attribute {name!r}")
 
     _require(
-        ds.attrs["schema_version"] in (SCHEMA_VERSION, SURFACE_DATASET_SCHEMA),
-        f"schema_version must be {SCHEMA_VERSION!r} or {SURFACE_DATASET_SCHEMA!r}, got {ds.attrs['schema_version']!r}",
+        ds.attrs["schema_version"] in (SCHEMA_VERSION, SURFACE_DATASET_SCHEMA, KOCHIN_SCHEMA_VERSION),
+        f"schema_version must be {SCHEMA_VERSION!r}, {SURFACE_DATASET_SCHEMA!r} or {KOCHIN_SCHEMA_VERSION!r}, "
+        f"got {ds.attrs['schema_version']!r}",
     )
+    validate_kochin_extension(ds)
     for name in ("backend", "backend_version", "backend_commit"):
         _require(
             isinstance(ds.attrs[name], str) and ds.attrs[name].strip(),

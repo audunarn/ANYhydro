@@ -54,6 +54,7 @@ PORTABLE_TEST_MODULES = (
     "test_hydrostatic_contract",
     "test_imports",
     "test_linux_owned_process",
+    "test_mean_drift",
     "test_owned_process",
     "test_panel_accuracy_reference",
     "test_panel_integration_candidate",
@@ -108,6 +109,11 @@ EXCLUDED_TEST_MODULES = {
         "real Capytaine direct solves (optional anyhydro[capytaine] extra) and the "
         "John-series oracle in tools/. Remaining gate: direct-method finite-depth "
         "qualification against real Capytaine solves."
+    ),
+    "test_mean_drift_export": (
+        "real Capytaine Kochin-export solves (optional anyhydro[capytaine] extra) and "
+        "imports test_capytaine_backend. Remaining gate: MD2 mean-drift validation "
+        "evidence (V2-V5) against real Capytaine solves."
     ),
     "test_excitation_source": (
         "module-level 'from anyloads import RegularWave' needs the optional "

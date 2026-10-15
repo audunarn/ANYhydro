@@ -89,7 +89,7 @@ MAX_FAR_FIELD_THETA = 16384
 
 #: The only backend setting keys this adapter understands; unknown keys are
 #: refused instead of silently ignored.
-SUPPORTED_SETTINGS = ("method", "cache_dir", "auxiliary_lid_policy")
+SUPPORTED_SETTINGS = ("method", "cache_dir", "auxiliary_lid_policy", "kochin")
 #: BEM formulation used when the request names none.  "direct" since adapter 0.6.0: on the same panel
 #: mesh it agrees with OrcaWave to <= 0.3 % (A/B) where "indirect" deviated 5-11 %; evidence and the
 #: qualified scope in docs/CAPYTAINE_ADAPTER.md.  "indirect" remains available explicitly.
@@ -306,6 +306,8 @@ def _check_settings(settings: Mapping[str, Any]) -> dict:
             if not isinstance(value, str):
                 raise CapabilityError(f"backend setting {key!r} must be a string")
             out[key] = value
+    if "kochin" in out and out["kochin"] != "export":
+        raise CapabilityError("unsupported kochin setting; only 'export' (docs/MEAN_DRIFT_CONTRACT.md) is supported")
     if "auxiliary_lid_policy" in out and out["auxiliary_lid_policy"] != "submerged_0p1m_v1":
         raise CapabilityError("unsupported auxiliary_lid_policy; only explicit submerged_0p1m_v1 is supported")
     if "method" in out:
@@ -321,6 +323,31 @@ def _check_settings(settings: Mapping[str, Any]) -> dict:
         # differs from an unset method, and sharing one cache entry would
         # make the two request forms overwrite each other.
     return out
+
+
+def _with_kochin_export(dataset, request, kochin_r, kochin_d, theta, cpt_labels, our_keys, wavenumbers, method):
+    """Schema 1.3.0 Kochin export (docs/MEAN_DRIFT_CONTRACT.md): world-origin Kochin functions and environment."""
+    from .schema import KOCHIN_SCHEMA_VERSION, validate_hydro_dataset
+    order = [cpt_labels.index(label) for label in cpt_labels]       # radiating DOFs already in our order
+    out = dataset.copy()
+    out = out.assign_coords(theta=np.asarray(theta, dtype=np.float64))
+    out["kochin_radiation"] = (("omega", "radiating_dof", "theta"), np.asarray(kochin_r)[:, order, :])
+    out["kochin_diffraction"] = (("omega", "wave_direction", "theta"), np.asarray(kochin_d))
+    out["wavenumber"] = (("omega",), np.asarray(wavenumbers, dtype=np.float64))
+    depth = float(request.water_depth)
+    out["water_depth"] = ((), np.float64(depth))
+    out["rho"] = ((), np.float64(request.rho))
+    out["g"] = ((), np.float64(request.gravity))
+    out.attrs["wave_environment"] = json.dumps(dict(
+        water_depth="inf" if not np.isfinite(depth) else depth, rho=float(request.rho), g=float(request.gravity)))
+    out.attrs["kochin_export"] = json.dumps(dict(
+        route=("source strengths (capytaine compute_kochin, hull and lid)" if method == "indirect" else
+               "Green's identity on the physical hull (auxiliary lid excluded)"),
+        method=method, reference_point=[0.0, 0.0], theta_count=int(len(theta)),
+        normalisation="(1/4 pi) int (...) dS, capytaine compute_kochin convention",
+        incident_phase_origin=[0.0, 0.0], radiating_dofs=list(our_keys)))
+    out.attrs["schema_version"] = KOCHIN_SCHEMA_VERSION
+    return validate_hydro_dataset(out)
 
 
 def _capytaine_version() -> str:
@@ -813,6 +840,9 @@ class CapytaineBackend(HydrodynamicsBackend):
         # indirect method, from Green's identity on the hull potential with
         # the direct method (which has no source strengths).
         method = settings.get("method", DEFAULT_METHOD)
+        export_kochin = settings.get("kochin") == "export"
+        if export_kochin and (len(bodies) != 1 or any(b.mesh.surface is not None for b in bodies)):
+            raise CapabilityError("the Kochin export is admitted for one body without surface semantics only")
         far_field = True
         far_field_format = (FAR_FIELD_DAMPING_FORMAT if method == "indirect"
                             else FAR_FIELD_DAMPING_GREEN_IDENTITY_FORMAT)
@@ -827,6 +857,10 @@ class CapytaineBackend(HydrodynamicsBackend):
             centre = 0.5 * (all_vertices[:, :2].min(axis=0) + all_vertices[:, :2].max(axis=0))
             radius = float(np.max(np.hypot(all_vertices[:, 0] - centre[0],
                                            all_vertices[:, 1] - centre[1])))
+            if export_kochin:
+                # exported Kochin functions keep the world origin as reference (mean drift contract):
+                # their harmonics reach k R_world <= k (R_bbox + |c_bbox|)
+                radius += float(np.hypot(centre[0], centre[1]))
             n_theta = far_field_theta_count(
                 request.omegas, float(request.water_depth), float(request.gravity), radius)
             if n_theta > MAX_FAR_FIELD_THETA:
@@ -909,24 +943,36 @@ class CapytaineBackend(HydrodynamicsBackend):
             theta = np.arange(n_theta, dtype=np.float64) * (2.0 * np.pi / n_theta)
             omegas_req = np.asarray(request.omegas, dtype=np.float64)
             kochin = np.full((omegas_req.size, n_dof, n_theta), np.nan, dtype=np.complex128)
+            headings_req = np.asarray(request.wave_directions, dtype=np.float64)
+            kochin_d = (np.full((omegas_req.size, headings_req.size, n_theta), np.nan, dtype=np.complex128)
+                        if export_kochin else None)
             label_index = {label: i for i, label in enumerate(cpt_labels)}
+
+            def _kochin_of(res):
+                if method == "indirect":
+                    return compute_kochin(res, theta)
+                # Green's identity on the physical hull; auxiliary lid panels excluded. For diffraction the
+                # problem's boundary condition is dphi_s/dn = -dphi_i/dn and the potential is the scattered one.
+                hull = np.asarray(res.problem.body.hull_mask)
+                mesh_all = res.problem.body.mesh_including_lid
+                return green_identity_kochin(
+                    mesh_all.faces_centers[hull], mesh_all.faces_normals[hull],
+                    mesh_all.faces_areas[hull], np.asarray(res.problem.boundary_condition)[hull],
+                    np.asarray(res.potential)[hull], theta,
+                    k=float(res.wavenumber), water_depth=float(request.water_depth))
+
             for res in results:
+                o = int(np.flatnonzero(omegas_req == float(res.problem.omega))[0])
                 dof = getattr(res.problem, "radiating_dof", None)
                 if dof is None:
-                    continue          # diffraction: no far-field damping needed
-                o = int(np.flatnonzero(omegas_req == float(res.problem.omega))[0])
-                if method == "indirect":
-                    kochin[o, label_index[dof]] = compute_kochin(res, theta)
-                else:
-                    # Green's identity on the physical hull; auxiliary lid panels excluded
-                    hull = np.asarray(res.problem.body.hull_mask)
-                    mesh_all = res.problem.body.mesh_including_lid
-                    kochin[o, label_index[dof]] = green_identity_kochin(
-                        mesh_all.faces_centers[hull], mesh_all.faces_normals[hull],
-                        mesh_all.faces_areas[hull], np.asarray(res.problem.boundary_condition)[hull],
-                        np.asarray(res.potential)[hull], theta,
-                        k=float(res.wavenumber), water_depth=float(request.water_depth))
+                    if export_kochin:     # diffraction Kochin only for the export (no far-field damping use)
+                        h = int(np.flatnonzero(headings_req == float(res.problem.wave_direction))[0])
+                        kochin_d[o, h] = _kochin_of(res)
+                    continue
+                kochin[o, label_index[dof]] = _kochin_of(res)
             kochin = _finite("kochin_radiation", kochin)
+            if export_kochin:
+                kochin_d = _finite("kochin_diffraction", kochin_d)
             wavenumbers = np.asarray(result["wavenumber"].values, dtype=np.float64)
             damping_far = _finite(
                 "radiation_damping_far_field",
@@ -1002,7 +1048,7 @@ class CapytaineBackend(HydrodynamicsBackend):
 
         reciprocity = reciprocity_diagnostic(added_mass, damping, request.omegas, our_keys)
 
-        return assemble_hydro_dataset(
+        dataset = assemble_hydro_dataset(
             bodies,
             request,
             added_mass=added_mass,
@@ -1039,3 +1085,7 @@ class CapytaineBackend(HydrodynamicsBackend):
                 "reciprocity_diagnostic": reciprocity,
             },
         )
+        if export_kochin:
+            dataset = _with_kochin_export(dataset, request, kochin, kochin_d, theta, cpt_labels, our_keys,
+                                          np.asarray(result["wavenumber"].values, dtype=np.float64), method)
+        return dataset
