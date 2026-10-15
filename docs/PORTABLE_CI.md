@@ -114,6 +114,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_direct_finite_depth | real Capytaine direct solves needing the optional `anyhydro[capytaine]` extra; uses the John-series oracle in `tools/` | direct-method finite-depth qualification against real Capytaine solves |
 | test_direct_far_field | real Capytaine direct/indirect solves needing the optional `anyhydro[capytaine]` extra; imports `test_capytaine_backend` | direct-method far-field qualification against real Capytaine solves |
 | test_hydrostatic_contract_backend | real Capytaine hydrostatics and solves needing the optional `anyhydro[capytaine]` extra; imports `test_capytaine_backend` | ADR-015 L6-4 hydrostatic contract evidence against real Capytaine solves |
+| test_vessel_study | real Capytaine solves needing the optional `anyhydro[capytaine]` extra; imports `test_capytaine_backend` | ADR-015 L6-4 vessel source campaign after the ANYmarine L6-F2 gate |
 | test_mean_drift_export | real Capytaine Kochin-export solves needing the optional `anyhydro[capytaine]` extra; imports `test_capytaine_backend` | MD2 mean-drift validation evidence (V2-V5) against real Capytaine solves |
 | test_excitation_source | module-level `from anyloads import RegularWave` needs the optional `anyhydro[sea-state]` extra | sea-state integration qualification with ANYloads |
 | test_sea_excitation | module-level ANYloads imports need the optional `anyhydro[sea-state]` extra | sea-state integration qualification with ANYloads |

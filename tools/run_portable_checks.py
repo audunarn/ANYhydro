@@ -115,6 +115,11 @@ EXCLUDED_TEST_MODULES = {
         "imports test_capytaine_backend. Remaining gate: ADR-015 L6-4 hydrostatic contract "
         "evidence against real Capytaine solves."
     ),
+    "test_vessel_study": (
+        "real Capytaine solves (optional anyhydro[capytaine] extra) and imports "
+        "test_capytaine_backend. Remaining gate: ADR-015 L6-4 vessel source campaign "
+        "after the ANYmarine L6-F2 gate."
+    ),
     "test_mean_drift_export": (
         "real Capytaine Kochin-export solves (optional anyhydro[capytaine] extra) and "
         "imports test_capytaine_backend. Remaining gate: MD2 mean-drift validation "
