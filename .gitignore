@@ -12,3 +12,7 @@ dist/
 .idea/
 .pytest*/
 .venv*/
+
+# Licensed OrcaWave reference example and the upstream HAMS-MREL release binary (local only, never committed)
+examples/L01 Default vessel/
+/HAMS_MREL.exe
