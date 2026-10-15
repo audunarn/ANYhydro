@@ -383,3 +383,21 @@ def test_dof_scales_serialisation_legacy_form_and_refusals():
     window, a_rec, b_rec, a_ref, b_ref = _synthetic_blocks()
     with pytest.raises(rad.ReconstructionCriteriaError, match="4 DOFs"):
         rad._full_block_report(scaled, window, a_rec, b_rec, a_ref, b_ref, None)
+
+
+
+def test_normalised_report_scales_the_a_inf_difference_too():
+    window, a_rec, b_rec, a_ref, b_ref = _synthetic_blocks()
+    S = np.array([1.0, 1.0, 0.02, 0.02])
+    crit = dataclasses.replace(rad.reconstruction_criteria_from_dict(FULL_BLOCK), dof_scales=tuple(S))
+    rep = rad._full_block_report(crit, window, a_rec, b_rec, a_ref, b_ref, np.ones((4, 4)))
+    assert np.allclose(np.asarray(rep.a_inf_difference), S[:, None] * S[None, :])
+
+
+def test_raw_source_full_block_route():
+    """ADR-015 section 4: compare_reconstruction accepts full-block criteria on the bound raw source."""
+    from test_radiation import make_oracle_settings
+    ds = make_oracle_dataset(omegas=OMEGAS)
+    k = rad.radiation_kernel_from_dataset(ds, make_oracle_settings())
+    rep = rad.compare_reconstruction(k, ds, rad.reconstruction_criteria_from_dict(FULL_BLOCK))
+    assert isinstance(rep, rad.FullBlockReconstructionReport)

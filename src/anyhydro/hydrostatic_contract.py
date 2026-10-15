@@ -72,6 +72,15 @@ FULL_SOURCE_KEYS = ("mass", "center_of_gravity", "composition")
 # contract/binding payload (the ``hydrostatic_contract`` attribute). The
 # binding declares target identity; it is not scientific qualification.
 SOURCE_BINDING_VERSION = "hydrostatic_source_binding_v1"
+
+#: Implemented physical-wrench rate maps (ADR-004 / ADR-015 section 3). ``spatial_increments_exp_chart_v1``: the
+#: source rows are the physical force and the moment about the co-moving rotation centre (world axes); the source
+#: stiffness is minus their derivative with respect to translation and SPATIAL angular increments at the baseline
+#: pose (not integrable coordinates). The solver chart (reference translation u, rotation vector theta with
+#: R = Exp(theta) R0) relates by D = blockdiag(I, J(theta)), J(0) = I, and the ADR-004 pullback at the origin is
+#: K_chart = K_source - 1/2 skew(M_baseline) on the rotational block (implemented: ``chart_stiffness``).
+RATE_MAP_SPATIAL_EXP = "spatial_increments_exp_chart_v1"
+IMPLEMENTED_RATE_MAPS = (RATE_MAP_SPATIAL_EXP,)
 SOURCE_BINDING_KEYS = ("binding_version", "dataset_content_hash")
 
 
@@ -209,8 +218,14 @@ class HydrostaticContract:
     provenance: Mapping[str, Any]
     full_source: Optional[Mapping[str, Any]]
     source_binding: Optional[Mapping[str, Any]] = None
+    #: required for PHYSICAL_WRENCH composition: the declared physical rate map (omitted from JSON when None)
+    rate_map: Optional[str] = None
 
     def __post_init__(self) -> None:
+        if self.rate_map is not None and (not isinstance(self.rate_map, str) or not self.rate_map.strip()):
+            raise RecordValidationError("rate_map must be a non-empty string or None")
+        if self.rate_map is not None and self.force_basis != FORCE_BASIS_PHYSICAL_WRENCH:
+            raise RecordValidationError("a rate_map is declared only for the PHYSICAL_WRENCH force basis")
         if self.role not in HYDROSTATIC_ROLES:
             raise RecordValidationError(
                 f"role must be one of {HYDROSTATIC_ROLES}, got {self.role!r}"
@@ -382,6 +397,7 @@ class HydrostaticContract:
             "source_binding": None
             if self.source_binding is None
             else dict(self.source_binding),
+            **({"rate_map": self.rate_map} if self.rate_map is not None else {}),
         }
 
     @classmethod
@@ -399,7 +415,7 @@ class HydrostaticContract:
             "provenance",
             "full_source",
         }
-        optional = {"source_binding"}
+        optional = {"source_binding", "rate_map"}
         unknown = set(data) - expected - optional
         missing = expected - set(data)
         if unknown or missing:
@@ -464,6 +480,7 @@ class HydrostaticContract:
             provenance=dict(provenance),
             full_source=None if full_source is None else dict(full_source),
             source_binding=source_binding,
+            rate_map=data.get("rate_map"),
         )
 
 
@@ -645,6 +662,7 @@ def attach_hydrostatic_contract(
         provenance=contract.provenance,
         full_source=contract.full_source,
         source_binding=binding,
+        rate_map=contract.rate_map,
     )
     out = ds.copy(deep=True)
     out.attrs[HYDROSTATIC_CONTRACT_ATTR] = json.dumps(
@@ -727,12 +745,10 @@ def hydrostatic_composition_eligibility(ds) -> HydrostaticCompositionEligibility
             "actual measured baseline wrench per body is required for "
             "composition admission"
         )
-    if contract.force_basis == FORCE_BASIS_PHYSICAL_WRENCH:
+    if contract.force_basis == FORCE_BASIS_PHYSICAL_WRENCH and contract.rate_map not in IMPLEMENTED_RATE_MAPS:
         reasons.append(
-            "force basis PHYSICAL_WRENCH is not admitted: the source-specific "
-            "rate/coordinate convention map and its implemented conversion "
-            "are required first; this slice admits only complete, bound "
-            "GENERALIZED_DOF declarations at the metadata level"
+            "force basis PHYSICAL_WRENCH needs a declared, implemented rate map "
+            f"({list(IMPLEMENTED_RATE_MAPS)}); got {contract.rate_map!r}"
         )
     if contract.role == ROLE_FULL:
         reasons.append(
@@ -760,6 +776,29 @@ def hydrostatic_composition_eligibility(ds) -> HydrostaticCompositionEligibility
         admissible=not reasons,
         reasons=tuple(reasons),
     )
+
+
+def chart_stiffness(contract: "HydrostaticContract", body_id: str, source_block) -> np.ndarray:
+    """ADR-004 pullback of one body's 6 x 6 source stiffness block into the solver chart at the origin.
+
+    Only the implemented PHYSICAL_WRENCH rate map is converted: K_chart = K_source - 1/2 skew(M_baseline) on the
+    rotational block (M_baseline: the measured baseline moment about the rotation centre). GENERALIZED_DOF blocks are
+    already work-conjugate to chart coordinates and are returned unchanged. Anything else is a typed refusal.
+    """
+    K = np.array(source_block, dtype=float)
+    if K.shape != (6, 6) or not np.all(np.isfinite(K)):
+        raise HydrostaticContractError("source stiffness block must be a finite 6 x 6 matrix")
+    if contract.force_basis == FORCE_BASIS_GENERALIZED_DOF:
+        return K
+    if contract.force_basis != FORCE_BASIS_PHYSICAL_WRENCH or contract.rate_map != RATE_MAP_SPATIAL_EXP:
+        raise HydrostaticContractError(
+            f"no implemented conversion for force basis {contract.force_basis!r} with rate map {contract.rate_map!r}")
+    if contract.baseline_wrench is None or body_id not in contract.baseline_wrench:
+        raise HydrostaticContractError(f"the conversion needs the measured baseline wrench of body {body_id!r}")
+    m = np.asarray(contract.baseline_wrench[body_id][3:], dtype=float)
+    skew = np.array([[0.0, -m[2], m[1]], [m[2], 0.0, -m[0]], [-m[1], m[0], 0.0]])
+    K[3:, 3:] -= 0.5 * skew
+    return K
 
 
 def require_hydrostatic_composition(ds) -> HydrostaticCompositionEligibility:

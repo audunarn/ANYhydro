@@ -847,6 +847,8 @@ def _full_block_report(criteria, window, a_rec, b_rec, a_ref, b_ref, a_inf_diffe
                      f"dof_scales has {S.size} entries but the operators have {np.asarray(a_ref).shape[-1]} DOFs"))
         scale = S[:, None] * S[None, :]
         a_rec, b_rec, a_ref, b_ref = (np.asarray(x) * scale for x in (a_rec, b_rec, a_ref, b_ref))
+        if a_inf_difference is not None:
+            a_inf_difference = np.asarray(a_inf_difference) * scale      # same (normalised) coordinates
     z_err, a_err, b_err, am, bm, aw, bw = [], [], [], [], [], [], []
     for i, w in enumerate(window):
         z_ref = b_ref[i] + 1j * w * a_ref[i]
@@ -1686,7 +1688,7 @@ def compare_reconstruction(
     _require(not kernel.settings.calibrates_on_separate_grid,
              RadiationError("a separately calibrated A_inf kernel is compared on the "
                             "derived-operator route only"))
-    if not isinstance(criteria, ReconstructionCriteria):
+    if not isinstance(criteria, (ReconstructionCriteria, FullBlockReconstructionCriteria)):
         raise ReconstructionCriteriaError(
             "caller-declared ReconstructionCriteria are required; there is no default")
 
@@ -1710,6 +1712,9 @@ def compare_reconstruction(
     a_rec, b_rec = kernel.reconstruct(window)
     a_ref = np.asarray(reference_ds["added_mass"].values[selection], dtype=np.float64)
     b_ref = np.asarray(reference_ds["radiation_damping"].values[selection], dtype=np.float64)
+    if isinstance(criteria, FullBlockReconstructionCriteria):
+        # ADR-015 section 4: bound raw-source full-block route (optionally normalised by dof_scales)
+        return _full_block_report(criteria, window, a_rec, b_rec, a_ref, b_ref, None)
 
     a_error, a_threshold, a_pass = _compare_window(
         a_rec, a_ref, criteria.added_mass_abs_tol, criteria.added_mass_rel_tol)

@@ -358,15 +358,14 @@ HYDROSTATIC_COORDINATES = "rigid_increments_about_rotation_center_world_axes_v1"
 def _with_hydrostatic_contract(dataset, bodies, request):
     """Attach the ADR-004 hydrostatic contract of this backend's buoyancy-only stiffness (ADR-015 section 3).
 
-    Declared semantics (verified in tests against the exact buoyancy-wrench derivative): the stiffness rows are the
-    force and the moment about the rotation centre, work-conjugate to the dataset DOF coordinates = translation of
-    the rotation centre and spatial (world-axis) rotation increments about it (GENERALIZED_DOF); the derivative is
-    the incremental physical derivative about the equilibrium pose (INCREMENTAL_ABOUT_EQUILIBRIUM, including the
-    baseline-moment terms, e.g. K_46 = -rho g V (x_B - x_c)); a consumer working in an Exp(theta) chart applies the
-    ADR-004 pullback (K_chart = K_source - 1/2 skew(M_baseline) on the rotational block at the origin). The baseline
-    wrench is measured exactly from the immersed hull mesh (hydrostatics_exact).
+    Declared semantics (verified in tests against the exact buoyancy-wrench derivative): PHYSICAL_WRENCH rows = the
+    force and the moment about the co-moving rotation centre (world axes); INCREMENTAL_ABOUT_EQUILIBRIUM derivative
+    with respect to translation and SPATIAL rotation increments at the baseline pose (rate map
+    spatial_increments_exp_chart_v1), including the baseline-moment terms (e.g. K_46 = -rho g V (x_B - x_c)); the
+    implemented ADR-004 conversion is hydrostatic_contract.chart_stiffness. The baseline wrench is measured exactly
+    from the immersed hull mesh (hydrostatics_exact); Capytaine's stiffness carries its panel quadrature error.
     """
-    from .hydrostatic_contract import (FORCE_BASIS_GENERALIZED_DOF, ROLE_BUOYANCY_ONLY,
+    from .hydrostatic_contract import (FORCE_BASIS_PHYSICAL_WRENCH, RATE_MAP_SPATIAL_EXP, ROLE_BUOYANCY_ONLY,
                                        STIFFNESS_DERIVATIVE_INCREMENTAL, HydrostaticContract,
                                        attach_hydrostatic_contract)
     from .hydrostatics_exact import buoyancy_baseline_wrench
@@ -380,7 +379,7 @@ def _with_hydrostatic_contract(dataset, bodies, request):
             np.asarray(wet.vertices), np.asarray(wet.faces), tuple(b.rotation_center),
             float(request.rho), float(request.gravity))
     contract = HydrostaticContract(
-        role=ROLE_BUOYANCY_ONLY, force_basis=FORCE_BASIS_GENERALIZED_DOF,
+        role=ROLE_BUOYANCY_ONLY, force_basis=FORCE_BASIS_PHYSICAL_WRENCH, rate_map=RATE_MAP_SPATIAL_EXP,
         stiffness_derivative=STIFFNESS_DERIVATIVE_INCREMENTAL, bodies=tuple(b.body_id for b in bodies),
         baseline_wrench=baseline,
         provenance={"source": "anyhydro capytaine backend " + CAPYTAINE_ADAPTER_VERSION,
