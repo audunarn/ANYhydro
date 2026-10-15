@@ -184,6 +184,8 @@ class VesselStudyRecipe:
                  f"producer must declare exactly {list(_PRODUCER_KEYS)} as strings")
         object.__setattr__(self, "producer", MappingProxyType({k: self.producer[k] for k in _PRODUCER_KEYS}))
         self.full_block_criteria()                 # validated now
+        _require(any(self.full_block["omega_min"] <= w <= self.full_block["omega_max"] for w in self.omegas),
+                 "the full-block evaluation window contains no recipe frequency")
         self.request(self.headings[0])             # the request is admissible before any solve
 
     # ------------------------------------------------------------------ derived objects
@@ -240,6 +242,10 @@ class VesselStudyRecipe:
         """Rebuild a recipe from its identity dict and the supplied level meshes; strict (typed refusals only)."""
         _require(isinstance(data, Mapping) and set(data) == set(cls._KEYS),
                  f"a {VESSEL_STUDY_FORMAT} record must contain exactly {list(cls._KEYS)}")
+        for key in ("levels", "retained_dofs", "omegas", "headings", "rotation_center", "center_of_mass"):
+            _require(isinstance(data[key], (list, tuple)), f"{key} must be a list")
+        for key in ("kernel", "full_block", "producer"):
+            _require(isinstance(data[key], Mapping), f"{key} must be an object")
         _require(data["format"] == VESSEL_STUDY_FORMAT and data["qualification_scope"] == QUALIFICATION_SCOPE,
                  f"not a {VESSEL_STUDY_FORMAT} record")
         _require(list(data["retained_dofs"]) == list(RIGID_DOFS), "the study judges the full rigid block")
@@ -296,13 +302,26 @@ def symbol_min_eigenvalue(kernel_values, dt: float, n_theta: int = 2049) -> floa
     return float(np.min(np.linalg.eigvalsh(symbol)))
 
 
-def _verify_response(recipe: VesselStudyRecipe, dataset, heading: float) -> None:
+def _verify_response(recipe: VesselStudyRecipe, level: VesselMeshLevel, dataset, heading: float) -> None:
     """Each response must be the solve of its own request by the declared producer (labelled coordinates)."""
-    from .capytaine_backend import CAPYTAINE_ADAPTER_VERSION
     _require(dataset.attrs.get("backend") == recipe.producer["backend"]
              and dataset.attrs.get("backend_version") == recipe.producer["backend_version"]
-             and CAPYTAINE_ADAPTER_VERSION == recipe.producer["adapter_version"],
+             and dataset.attrs.get("adapter_version") == recipe.producer["adapter_version"],
              f"the response was not produced by the declared producer {dict(recipe.producer)}")
+    request = recipe.request(heading)
+    _require(dataset.attrs.get("request_hash") == request.content_hash(),
+             "the response is not the solve of the recipe's request (request hash: frequencies, heading, depth, "
+             "rho, g, limits flags, backend settings)")
+    identity = json.loads(dataset.attrs["body_identity"]) if isinstance(dataset.attrs.get("body_identity"), str) \
+        else dict(dataset.attrs.get("body_identity", {}))
+    body = recipe.body(level)
+    expected = {"mesh_hash": body.mesh.mesh_hash,
+                "lid_mesh_hash": None if body.lid_mesh is None else body.lid_mesh.mesh_hash,
+                "rotation_center": [float(v) for v in body.rotation_center],
+                "center_of_mass": [float(v) for v in body.center_of_mass],
+                "enabled_dofs": list(body.enabled_dofs)}
+    _require(identity.get(recipe.body_id) == expected,
+             "the response body identity (hull/lid mesh, rotation centre, CG, DOFs) is not the recipe level's")
     _require(np.array_equal(np.asarray(dataset["omega"].values, dtype=float), np.asarray(recipe.omegas)),
              "the response frequencies are not the recipe's")
     _require(np.array_equal(np.asarray(dataset["wave_direction"].values, dtype=float), np.array([heading])),
@@ -327,7 +346,7 @@ def run_vessel_level(recipe: VesselStudyRecipe, level_name: str, backend) -> Ves
     datasets = []
     for heading in recipe.headings:
         dataset = backend.solve([body], recipe.request(heading))
-        _verify_response(recipe, dataset, heading)
+        _verify_response(recipe, levels[level_name], dataset, heading)
         datasets.append(dataset)
     reference = datasets[0]
     for other in datasets[1:]:

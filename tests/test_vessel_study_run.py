@@ -82,3 +82,27 @@ def test_responses_are_verified_against_their_requests(mode, message):
         run_vessel_level(recipe, "coarse", _Tamper(_backend(recipe), mode))
     with pytest.raises(VesselStudyError, match="unknown level"):
         run_vessel_level(recipe, "fine", _backend(recipe))
+
+
+
+class _Physics:
+    """Solves a physically different request (double density) or declares another adapter version."""
+
+    def __init__(self, inner, mode):
+        self.inner, self.mode = inner, mode
+
+    def solve(self, bodies, request):
+        import dataclasses
+        if self.mode == "rho":
+            return self.inner.solve(bodies, dataclasses.replace(request, rho=2 * request.rho))
+        ds = self.inner.solve(bodies, request)
+        out = ds.copy()
+        out.attrs["adapter_version"] = "0.5.0"
+        return out
+
+
+@pytest.mark.parametrize("mode, message", [("rho", "request"), ("adapter", "producer")])
+def test_responses_must_be_the_recipe_physics_and_producer(mode, message):
+    recipe = _recipe()
+    with pytest.raises(VesselStudyError, match=message):
+        run_vessel_level(recipe, "coarse", _Physics(_backend(recipe), mode))

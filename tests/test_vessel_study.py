@@ -85,3 +85,14 @@ def test_kernel_recipe_validation():
         _kernel(n_time=2001, max_time_samples=1001)
     with pytest.raises(VesselStudyError, match="not admissible"):
         _kernel(n_time=30001, max_time_samples=30001, bartlett_window=20.0)
+
+
+
+def test_malformed_containers_and_empty_windows_are_typed_refusals():
+    recipe = _recipe()
+    data = recipe.to_dict()
+    for key in ("retained_dofs", "levels", "omegas", "kernel", "producer"):
+        with pytest.raises(VesselStudyError):
+            VesselStudyRecipe.from_dict(dict(data, **{key: None}), recipe.levels)
+    with pytest.raises(VesselStudyError, match="evaluation window"):
+        _recipe(full_block=dict(FULL_BLOCK, omega_min=10.0, omega_max=20.0))

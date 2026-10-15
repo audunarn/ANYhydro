@@ -353,8 +353,9 @@ def _with_kochin_export(dataset, request, kochin_r, kochin_d, theta, cpt_labels,
 
 
 HYDROSTATIC_COORDINATES = "rigid_increments_about_rotation_center_world_axes_v1"
-#: attached-contract format (cache identity): v2 = PHYSICAL_WRENCH + rate map, validated wet boundary
-HYDROSTATIC_CONTRACT_FORMAT = "anyhydro_capytaine_hydrostatic_contract_v2"
+#: attached-contract format (cache identity): v2 = PHYSICAL_WRENCH + rate map, validated wet boundary;
+#: v3 = provenance also records the solve's rho and gravity (one declared g at the consumer)
+HYDROSTATIC_CONTRACT_FORMAT = "anyhydro_capytaine_hydrostatic_contract_v3"
 
 
 def _with_hydrostatic_contract(dataset, bodies, request):
@@ -385,6 +386,7 @@ def _with_hydrostatic_contract(dataset, bodies, request):
         stiffness_derivative=STIFFNESS_DERIVATIVE_INCREMENTAL, bodies=tuple(b.body_id for b in bodies),
         baseline_wrench=baseline,
         provenance={"source": "anyhydro capytaine backend " + CAPYTAINE_ADAPTER_VERSION,
+                    "rho": float(request.rho), "gravity": float(request.gravity),
                     "coordinates": HYDROSTATIC_COORDINATES,
                     "moment_reference": "rotation_center",
                     "stiffness": "capytaine compute_hydrostatic_stiffness with mass=0 (panel quadrature)",
