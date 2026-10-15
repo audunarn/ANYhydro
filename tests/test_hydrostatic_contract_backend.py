@@ -224,3 +224,67 @@ def test_physical_wrench_needs_an_implemented_rate_map():
         chart_stiffness(HydrostaticContract(**declared, rate_map="some_other_map_v1"), "b", np.eye(6))
     with pytest.raises(RecordValidationError, match="rate_map"):
         HydrostaticContract(**dict(declared, force_basis="GENERALIZED_DOF"), rate_map="spatial_increments_exp_chart_v1")
+
+
+
+# ---------------------------------------------------------------------------------------------- review round 2
+
+def _box_faces(offset, size=(2.0, 2.0, 1.0), drop_face=None):
+    """Closed axis-aligned box (outward quads) with its centre at ``offset``; optionally without one face."""
+    hx, hy, hz = (s / 2 for s in size)
+    cx, cy, cz = offset
+    v = np.array([[cx + sx * hx, cy + sy * hy, cz + sz * hz] for sz in (-1, 1) for sy in (-1, 1) for sx in (-1, 1)])
+    faces = {"-z": [0, 2, 3, 1], "+z": [4, 5, 7, 6], "-y": [0, 1, 5, 4], "+y": [2, 6, 7, 3],
+             "-x": [0, 4, 6, 2], "+x": [1, 3, 7, 5]}
+    return v, [f for k, f in faces.items() if k != drop_face]
+
+
+def test_compensating_openings_are_refused_by_the_pressure_check():
+    """Codex round 2: two boxes with opposite openings at different depths keep the closure identities but not the
+    pressure load (F = (-4, 0, 8), My = 12 per unit rho g instead of the buoyancy)."""
+    va, fa = _box_faces((0.0, 0.0, -1.5), drop_face="+x")
+    vb, fb = _box_faces((2.0, 0.0, -3.5), drop_face="-x")
+    verts = np.vstack([va, vb])
+    faces = np.array(fa + [[i + 8 for i in f] for f in fb])
+    with pytest.raises(HydrostaticsExactError, match="pressure load"):
+        immersed_volume_moments(verts, faces)
+
+
+def test_planarity_check_is_translation_invariant():
+    box = np.array([[0, 0, -1], [2, 0, -1], [2, 2, -2], [0, 2, -1], [0, 0, 0], [2, 0, 0], [2, 2, 0], [0, 2, 0]], float)
+    faces = np.array([[0, 3, 2, 1], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]])
+    far = box + np.array([1e9, 0.0, 0.0])
+    with pytest.raises(HydrostaticsExactError, match="not planar"):
+        immersed_volume_moments(far, faces)
+
+
+def test_pressure_wrench_equals_buoyancy_for_a_closed_offset_box():
+    from anyhydro.hydrostatics_exact import pressure_wrench_unit
+    wet = _box(4, odd_layers=True).immersed_part()
+    V, m = immersed_volume_moments(wet.vertices, wet.faces)
+    w = pressure_wrench_unit(wet.vertices, wet.faces, CENTER)
+    expected = np.concatenate([[0.0, 0.0, V], np.cross(m / V - CENTER, [0.0, 0.0, V])])
+    assert np.allclose(w, expected, rtol=0, atol=1e-11 * V)
+
+
+def test_rebind_and_baseline_replacement_keep_the_rate_map():
+    import json as _json
+    from anyhydro.hydrostatic_contract import HydrostaticContract, rebind_hydrostatic_contract, replace_baseline_wrench
+    _, ds = _solve({"hydrostatic_contract": "attach"})
+    rebound = HydrostaticContract.from_json(_json.loads(rebind_hydrostatic_contract(ds)))
+    assert rebound.rate_map == "spatial_increments_exp_chart_v1"
+    contract = read_hydrostatic_contract(ds)
+    replaced = HydrostaticContract.from_json(_json.loads(replace_baseline_wrench(contract, dict(contract.baseline_wrench))))
+    assert replaced.rate_map == "spatial_increments_exp_chart_v1"
+
+
+def test_contract_requests_have_a_versioned_cache_identity():
+    from anyhydro.capytaine_backend import HYDROSTATIC_CONTRACT_FORMAT
+    body = _box_body("b0", (0.3, -0.2, -0.3))
+    backend = CapytaineBackend(execution_limits=CapytaineExecutionLimits(max_total_panels=100, max_finite_omegas=1,
+                                                                          max_wave_directions=1))
+    request = _dev_request(omegas=np.array([1.0]), wave_directions=np.array([0.0]))
+    attach = backend._cache_identity([body], request, {"hydrostatic_contract": "attach"}, "3.0.0")
+    plain = backend._cache_identity([body], request, {}, "3.0.0")
+    assert attach["hydrostatic_contract_format"] == HYDROSTATIC_CONTRACT_FORMAT
+    assert "hydrostatic_contract_format" not in plain

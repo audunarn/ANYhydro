@@ -1713,8 +1713,18 @@ def compare_reconstruction(
     a_ref = np.asarray(reference_ds["added_mass"].values[selection], dtype=np.float64)
     b_ref = np.asarray(reference_ds["radiation_damping"].values[selection], dtype=np.float64)
     if isinstance(criteria, FullBlockReconstructionCriteria):
-        # ADR-015 section 4: bound raw-source full-block route (optionally normalised by dof_scales)
-        return _full_block_report(criteria, window, a_rec, b_rec, a_ref, b_ref, None)
+        # ADR-015 section 4: bound raw-source full-block route (optionally normalised by dof_scales), with the same
+        # band-consistent A_inf safeguards as the derived route
+        a_inf_difference = None
+        if kernel.settings.a_inf_policy == A_INF_BAND_CONSISTENT:
+            _require(kernel.settings.a_inf_calibration_max < criteria.omega_min,
+                     ReconstructionCriteriaError(
+                         "the A_inf calibration band must lie below the evaluation window"))
+            a_inf_source = np.asarray(reference_ds["added_mass_infinite"].values, dtype=np.float64)
+            a_inf_kernel = verify_band_consistent_added_mass_infinite(
+                kernel, a_inf_source, omegas, np.asarray(reference_ds["added_mass"].values, dtype=np.float64))
+            a_inf_difference = a_inf_kernel - a_inf_source
+        return _full_block_report(criteria, window, a_rec, b_rec, a_ref, b_ref, a_inf_difference)
 
     a_error, a_threshold, a_pass = _compare_window(
         a_rec, a_ref, criteria.added_mass_abs_tol, criteria.added_mass_rel_tol)

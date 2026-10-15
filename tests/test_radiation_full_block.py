@@ -401,3 +401,18 @@ def test_raw_source_full_block_route():
     k = rad.radiation_kernel_from_dataset(ds, make_oracle_settings())
     rep = rad.compare_reconstruction(k, ds, rad.reconstruction_criteria_from_dict(FULL_BLOCK))
     assert isinstance(rep, rad.FullBlockReconstructionReport)
+
+
+
+def test_raw_full_block_route_enforces_band_consistent_calibration_safeguards():
+    from test_radiation import make_oracle_settings
+    ds = make_oracle_dataset(omegas=OMEGAS)
+    settings = make_oracle_settings(a_inf_policy=rad.A_INF_BAND_CONSISTENT,
+                                    a_inf_calibration_min=float(OMEGAS[0]), a_inf_calibration_max=float(OMEGAS[2]))
+    k = rad.radiation_kernel_from_dataset(ds, settings)
+    overlapping = rad.reconstruction_criteria_from_dict(dict(FULL_BLOCK, omega_min=float(OMEGAS[1])))
+    with pytest.raises(rad.ReconstructionCriteriaError, match="calibration band"):
+        rad.compare_reconstruction(k, ds, overlapping)
+    above = rad.reconstruction_criteria_from_dict(dict(FULL_BLOCK, omega_min=float(OMEGAS[3])))
+    rep = rad.compare_reconstruction(k, ds, above)
+    assert rep.a_inf_difference is not None

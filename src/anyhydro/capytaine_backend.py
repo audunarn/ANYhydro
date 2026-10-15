@@ -353,6 +353,8 @@ def _with_kochin_export(dataset, request, kochin_r, kochin_d, theta, cpt_labels,
 
 
 HYDROSTATIC_COORDINATES = "rigid_increments_about_rotation_center_world_axes_v1"
+#: attached-contract format (cache identity): v2 = PHYSICAL_WRENCH + rate map, validated wet boundary
+HYDROSTATIC_CONTRACT_FORMAT = "anyhydro_capytaine_hydrostatic_contract_v2"
 
 
 def _with_hydrostatic_contract(dataset, bodies, request):
@@ -558,6 +560,9 @@ class CapytaineBackend(HydrodynamicsBackend):
                                   if settings.get("method", DEFAULT_METHOD) == "indirect"
                                   else FAR_FIELD_DAMPING_GREEN_IDENTITY_FORMAT),
             "settings": dict(settings),
+            # versioned so entries cached before the PHYSICAL_WRENCH declaration and geometry validation never return
+            **({"hydrostatic_contract_format": HYDROSTATIC_CONTRACT_FORMAT}
+               if settings.get("hydrostatic_contract") == "attach" else {}),
             "execution_limits": self._limits.as_dict(),
             "request": {
                 "omegas": [float(v) for v in request.omegas],

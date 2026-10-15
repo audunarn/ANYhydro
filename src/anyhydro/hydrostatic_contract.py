@@ -586,6 +586,7 @@ def rebind_hydrostatic_contract(ds) -> str:
         provenance=contract.provenance,
         full_source=contract.full_source,
         source_binding=contract_source_binding(ds),
+        rate_map=contract.rate_map,
     )
     return json.dumps(rebound.to_json(), sort_keys=True)
 
@@ -689,6 +690,7 @@ def replace_baseline_wrench(
         provenance=contract.provenance,
         full_source=contract.full_source,
         source_binding=contract.source_binding,
+        rate_map=contract.rate_map,
     )
     return json.dumps(updated.to_json(), sort_keys=True)
 
