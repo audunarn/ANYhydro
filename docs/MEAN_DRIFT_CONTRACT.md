@@ -1,6 +1,6 @@
 # Mean wave drift, far field (contract MD0)
 
-Status: ADOPTED by the owner 2026-10-15 (rev 4) (programme plan
+Status: ADOPTED by the owner 2026-10-15 (rev 4.1) (programme plan
 `C:/ANYworkspaceWork/anymarine-evidence/mean-drift-20261015/PLAN.md`, slice MD0). Rev 2/3 answer Codex review rounds 1/2
 (session 01a13f6a-6dfd-7a41-95e2-2319e7702c71); the coefficients below were confirmed against Codex's independent
 derivation in round 2. Rev 4 (owner, 2026-10-15) records the MD2 outcome: implemented in `anyhydro.mean_drift`
@@ -36,7 +36,8 @@ c1 = 2 pi rho w / tanh(kh) and c2 = 2 pi rho k^2 / D (same structure for the yaw
   Present: the dataset gains `kochin_radiation(omega, radiating_dof, theta)`,
   `kochin_diffraction(omega, wave_direction, theta)` (complex), the float64 scalars `water_depth` (may be +inf for
   deep water), `rho`, `g` (each equal to the `wave_environment` attribute value) and
-  `wavenumber(omega)` (dispersion w^2 = g k tanh(kh) checked to 1e-12 relative), and dataset-level attributes for the
+  `wavenumber(omega)` (the BEM's own wavenumbers; dispersion w^2 = g k tanh(kh) checked in k against the exact root
+  to 1e-8 relative - rev 4.1, owner 2026-10-15: Capytaine's Newton solve differs by up to ~1e-10), and dataset-level attributes for the
   Kochin route, reference point and theta grid (dataset level, because the complex split/recombine persistence
   helpers drop variable attributes; or those helpers are fixed to preserve them - decided in MD2, round-trip tested).
 - Origins (one convention for everything): Kochin reference point = world origin (0, 0) for radiation and
