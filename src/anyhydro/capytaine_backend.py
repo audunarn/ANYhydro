@@ -89,7 +89,7 @@ MAX_FAR_FIELD_THETA = 16384
 
 #: The only backend setting keys this adapter understands; unknown keys are
 #: refused instead of silently ignored.
-SUPPORTED_SETTINGS = ("method", "cache_dir", "auxiliary_lid_policy", "kochin")
+SUPPORTED_SETTINGS = ("method", "cache_dir", "auxiliary_lid_policy", "kochin", "hydrostatic_contract")
 #: BEM formulation used when the request names none.  "direct" since adapter 0.6.0: on the same panel
 #: mesh it agrees with OrcaWave to <= 0.3 % (A/B) where "indirect" deviated 5-11 %; evidence and the
 #: qualified scope in docs/CAPYTAINE_ADAPTER.md.  "indirect" remains available explicitly.
@@ -306,6 +306,8 @@ def _check_settings(settings: Mapping[str, Any]) -> dict:
             if not isinstance(value, str):
                 raise CapabilityError(f"backend setting {key!r} must be a string")
             out[key] = value
+    if "hydrostatic_contract" in out and out["hydrostatic_contract"] != "attach":
+        raise CapabilityError("unsupported hydrostatic_contract setting; only 'attach' (ADR-015 section 3) is supported")
     if "kochin" in out and out["kochin"] != "export":
         raise CapabilityError("unsupported kochin setting; only 'export' (docs/MEAN_DRIFT_CONTRACT.md) is supported")
     if "auxiliary_lid_policy" in out and out["auxiliary_lid_policy"] != "submerged_0p1m_v1":
@@ -348,6 +350,47 @@ def _with_kochin_export(dataset, request, kochin_r, kochin_d, theta, cpt_labels,
         incident_phase_origin=[0.0, 0.0], radiating_dofs=list(our_keys)))
     out.attrs["schema_version"] = KOCHIN_SCHEMA_VERSION
     return validate_hydro_dataset(out)
+
+
+HYDROSTATIC_COORDINATES = "rigid_increments_about_rotation_center_world_axes_v1"
+
+
+def _with_hydrostatic_contract(dataset, bodies, request):
+    """Attach the ADR-004 hydrostatic contract of this backend's buoyancy-only stiffness (ADR-015 section 3).
+
+    Declared semantics (verified in tests against the exact buoyancy-wrench derivative): the stiffness rows are the
+    force and the moment about the rotation centre, work-conjugate to the dataset DOF coordinates = translation of
+    the rotation centre and spatial (world-axis) rotation increments about it (GENERALIZED_DOF); the derivative is
+    the incremental physical derivative about the equilibrium pose (INCREMENTAL_ABOUT_EQUILIBRIUM, including the
+    baseline-moment terms, e.g. K_46 = -rho g V (x_B - x_c)); a consumer working in an Exp(theta) chart applies the
+    ADR-004 pullback (K_chart = K_source - 1/2 skew(M_baseline) on the rotational block at the origin). The baseline
+    wrench is measured exactly from the immersed hull mesh (hydrostatics_exact).
+    """
+    from .hydrostatic_contract import (FORCE_BASIS_GENERALIZED_DOF, ROLE_BUOYANCY_ONLY,
+                                       STIFFNESS_DERIVATIVE_INCREMENTAL, HydrostaticContract,
+                                       attach_hydrostatic_contract)
+    from .hydrostatics_exact import buoyancy_baseline_wrench
+    cpt = _require_capytaine()
+    baseline = {}
+    for b in bodies:
+        hull = cpt.Mesh(vertices=np.array(b.mesh.vertices, dtype=np.float64),
+                        faces=_face_lists(b.mesh.faces, b.mesh.face_sizes))
+        wet = hull.immersed_part()
+        baseline[b.body_id] = buoyancy_baseline_wrench(
+            np.asarray(wet.vertices), np.asarray(wet.faces), tuple(b.rotation_center),
+            float(request.rho), float(request.gravity))
+    contract = HydrostaticContract(
+        role=ROLE_BUOYANCY_ONLY, force_basis=FORCE_BASIS_GENERALIZED_DOF,
+        stiffness_derivative=STIFFNESS_DERIVATIVE_INCREMENTAL, bodies=tuple(b.body_id for b in bodies),
+        baseline_wrench=baseline,
+        provenance={"source": "anyhydro capytaine backend " + CAPYTAINE_ADAPTER_VERSION,
+                    "coordinates": HYDROSTATIC_COORDINATES,
+                    "moment_reference": "rotation_center",
+                    "stiffness": "capytaine compute_hydrostatic_stiffness with mass=0 (panel quadrature)",
+                    "baseline_wrench": "exact divergence-theorem moments of the immersed hull mesh",
+                    "chart_pullback": "K_chart = K_source - 0.5 skew(M_baseline) (ADR-004, Exp chart at the origin)"},
+        full_source=None)
+    return attach_hydrostatic_contract(dataset, contract)
 
 
 def _capytaine_version() -> str:
@@ -753,6 +796,9 @@ class CapytaineBackend(HydrodynamicsBackend):
                     "zero-speed unit elevation at global origin; "
                     "ANYhydro EXCITATION_SOURCE_ADMISSION_CONTRACT revision 1",
             )
+        if settings.get("hydrostatic_contract") == "attach":
+            # bound last: the contract's source binding covers the final dataset content
+            dataset = _with_hydrostatic_contract(dataset, bodies, request)
 
         if cache_path is not None:
             stamped = dataset.copy(deep=True)

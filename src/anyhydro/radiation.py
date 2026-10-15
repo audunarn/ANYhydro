@@ -248,8 +248,13 @@ SETTINGS_SERIALIZED_KEYS = frozenset({
     "execution_limits", "quadrature_method",
     "high_tail_policy", "high_tail_exponent", "high_tail_upper", "high_tail_name",
     "high_tail_scope", "a_inf_policy", "a_inf_calibration_min", "a_inf_calibration_max",
-    "a_inf_calibration_dt",
+    "a_inf_calibration_dt", "time_window_shape",
 })
+#: time-window shapes: legacy rectangular cut (zero after H) or the Bartlett taper (1 - t/H)+ whose transform (the
+#: Fejer kernel) is non-negative, so a passive spectrum stays passive (ADR-015 section 8 (iv)(d), energy note)
+TIME_WINDOW_RECTANGULAR = "rectangular"
+TIME_WINDOW_BARTLETT = "bartlett"
+TIME_WINDOW_SHAPES = (TIME_WINDOW_RECTANGULAR, TIME_WINDOW_BARTLETT)
 
 
 @dataclass(frozen=True)
@@ -298,6 +303,8 @@ class RadiationSettings:
     a_inf_policy: str = A_INF_COMPUTED
     a_inf_calibration_min: Optional[float] = None
     a_inf_calibration_max: Optional[float] = None
+    #: ``time_window_shape``: "rectangular" (legacy; omitted when serialised) or "bartlett" (requires time_window).
+    time_window_shape: str = TIME_WINDOW_RECTANGULAR
     #: Optional calibration time step for the band-consistent A_inf. When it
     #: differs from ``dt``, the A_inf difference is computed on a kernel
     #: rebuilt at this step over the same horizon, so kernels at different
@@ -460,6 +467,10 @@ class RadiationSettings:
                      RadiationSettingsError(
                          f"time_window must be finite in (0, {duration}] (the kernel time grid duration)"))
             object.__setattr__(self, "time_window", window)
+        _require(self.time_window_shape in TIME_WINDOW_SHAPES,
+                 RadiationSettingsError(f"time_window_shape must be one of {TIME_WINDOW_SHAPES}"))
+        _require(self.time_window_shape != TIME_WINDOW_BARTLETT or self.time_window is not None,
+                 RadiationSettingsError("time_window_shape 'bartlett' requires an explicit time_window H"))
 
     @property
     def kernel_duration(self) -> float:
@@ -507,6 +518,9 @@ class RadiationSettings:
             data["high_tail_name"] = self.high_tail_name
         if self.high_tail_scope != HIGH_TAIL_SCOPE_FULL:
             data["high_tail_scope"] = self.high_tail_scope
+        # The legacy rectangular cut keeps the exact old serialized form and hashes.
+        if self.time_window_shape != TIME_WINDOW_RECTANGULAR:
+            data["time_window_shape"] = self.time_window_shape
         if self.a_inf_policy != A_INF_COMPUTED:
             data["a_inf_policy"] = self.a_inf_policy
             data["a_inf_calibration_min"] = float(self.a_inf_calibration_min)
@@ -564,6 +578,7 @@ class RadiationSettings:
                 high_tail_scope=data.get("high_tail_scope", HIGH_TAIL_SCOPE_FULL),
                 a_inf_policy=data.get("a_inf_policy", A_INF_COMPUTED),
                 a_inf_calibration_min=data.get("a_inf_calibration_min"),
+                time_window_shape=data.get("time_window_shape", TIME_WINDOW_RECTANGULAR),
                 a_inf_calibration_max=data.get("a_inf_calibration_max"),
                 a_inf_calibration_dt=data.get("a_inf_calibration_dt"),
             )
@@ -637,6 +652,10 @@ class FullBlockReconstructionCriteria:
     clusters closer than cluster_fraction use the spectral norm of
     V^T (S(X_rec) - S(X)) V (spectral-radius form, owner amendment
     2026-10-12). Per-coefficient errors are reported only (K3).
+
+    ``dof_scales`` (optional, ADR-015 section 4): the diagonal S of the normalisation q = S q_hat (1 for translations,
+    1/L for rotations). When given, reference and reconstruction are both compared as S X S (norms and modal
+    analysis in normalised coordinates, per-coefficient errors too); omitted when None (legacy form and hashes).
     """
 
     omega_min: float
@@ -645,6 +664,7 @@ class FullBlockReconstructionCriteria:
     modal_rel_tol: float
     energetic_fraction: float
     cluster_fraction: float
+    dof_scales: Optional[tuple] = None
 
     FORM = "full_block"
     MODAL_REFERENCE = "spectral_radius"
@@ -663,13 +683,24 @@ class FullBlockReconstructionCriteria:
                  ReconstructionCriteriaError("omega_min must be <= omega_max"))
         _require(self.energetic_fraction < 1.0 and self.cluster_fraction < 1.0,
                  ReconstructionCriteriaError("fractions must be below 1"))
+        if self.dof_scales is not None:
+            try:
+                scales = tuple(float(s) for s in self.dof_scales)
+            except (TypeError, ValueError) as exc:
+                raise ReconstructionCriteriaError(f"dof_scales must be numbers: {exc}") from exc
+            _require(len(scales) > 0 and all(np.isfinite(s) and s > 0.0 for s in scales),
+                     ReconstructionCriteriaError("dof_scales must be finite and > 0"))
+            object.__setattr__(self, "dof_scales", scales)
 
     def to_dict(self) -> dict:
-        return {"form": self.FORM, "omega_min": self.omega_min, "omega_max": self.omega_max,
+        data = {"form": self.FORM, "omega_min": self.omega_min, "omega_max": self.omega_max,
                 "block_rel_tol": self.block_rel_tol, "modal_rel_tol": self.modal_rel_tol,
                 "energetic_fraction": self.energetic_fraction,
                 "cluster_fraction": self.cluster_fraction,
                 "modal_reference": self.MODAL_REFERENCE}
+        if self.dof_scales is not None:
+            data["dof_scales"] = list(self.dof_scales)
+        return data
 
 
 def reconstruction_criteria_from_dict(data: Mapping[str, Any]):
@@ -809,6 +840,13 @@ class FullBlockReconstructionReport:
 
 
 def _full_block_report(criteria, window, a_rec, b_rec, a_ref, b_ref, a_inf_difference):
+    if criteria.dof_scales is not None:
+        S = np.asarray(criteria.dof_scales, dtype=np.float64)
+        _require(S.size == np.asarray(a_ref).shape[-1],
+                 ReconstructionCriteriaError(
+                     f"dof_scales has {S.size} entries but the operators have {np.asarray(a_ref).shape[-1]} DOFs"))
+        scale = S[:, None] * S[None, :]
+        a_rec, b_rec, a_ref, b_ref = (np.asarray(x) * scale for x in (a_rec, b_rec, a_ref, b_ref))
     z_err, a_err, b_err, am, bm, aw, bw = [], [], [], [], [], [], []
     for i, w in enumerate(window):
         z_ref = b_ref[i] + 1j * w * a_ref[i]
@@ -1401,6 +1439,8 @@ def _kernel_from_arrays(
              RadiationError("computed kernel contains non-finite values; refusing"))
 
     if settings.time_window is not None:
+        if settings.time_window_shape == TIME_WINDOW_BARTLETT:
+            kernel *= np.clip(1.0 - t / settings.time_window, 0.0, None)[:, None, None]
         kernel[t > settings.time_window] = 0.0
 
     # --- diagnostics: high tail, symmetry, passivity (errors preserved, never clamped)
@@ -1458,7 +1498,9 @@ def _kernel_from_arrays(
     assumptions = [
         low_tail_assumption,
         high_tail_assumption,
-        f"time_window={'none' if settings.time_window is None else repr(float(settings.time_window))}",
+        f"time_window={'none' if settings.time_window is None else repr(float(settings.time_window))}"
+        + ("" if settings.time_window_shape == TIME_WINDOW_RECTANGULAR
+           else f", shape={settings.time_window_shape} (kernel x (1 - t/H)+)"),
         "kernel_artifact_unqualified: development artifact; cannot inherit qualified "
         "status from the source dataset",
     ]

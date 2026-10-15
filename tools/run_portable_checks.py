@@ -110,6 +110,11 @@ EXCLUDED_TEST_MODULES = {
         "John-series oracle in tools/. Remaining gate: direct-method finite-depth "
         "qualification against real Capytaine solves."
     ),
+    "test_hydrostatic_contract_backend": (
+        "real Capytaine hydrostatics and solves (optional anyhydro[capytaine] extra) and "
+        "imports test_capytaine_backend. Remaining gate: ADR-015 L6-4 hydrostatic contract "
+        "evidence against real Capytaine solves."
+    ),
     "test_mean_drift_export": (
         "real Capytaine Kochin-export solves (optional anyhydro[capytaine] extra) and "
         "imports test_capytaine_backend. Remaining gate: MD2 mean-drift validation "

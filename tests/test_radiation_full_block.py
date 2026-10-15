@@ -337,3 +337,49 @@ def test_overflowing_calibration_ratio_is_a_typed_refusal():
     data.update(n_time=101, a_inf_calibration_dt=1e-320)
     with pytest.raises(rad.RadiationSettingsError):
         rad.RadiationSettings.from_dict(data)
+
+
+# ---------------------------------------------------------------- ADR-015 L6-4 H-c: normalised full-block report
+
+def _synthetic_blocks(seed=3):
+    rng = np.random.default_rng(seed)
+    window = np.array([0.5, 0.8, 1.1])
+    def spd(scale):
+        Q = rng.normal(size=(4, 4))
+        X = Q @ Q.T + 4 * np.eye(4)
+        return X * scale[:, None] * scale[None, :]
+    si = np.array([1.0, 1.0, 50.0, 50.0])                 # rotations ~ L^2 larger in SI
+    a_ref = np.array([spd(si) for _ in window])
+    b_ref = np.array([spd(si) for _ in window])
+    a_rec = a_ref * (1 + 1e-3 * rng.normal(size=a_ref.shape))
+    b_rec = b_ref * (1 + 1e-3 * rng.normal(size=b_ref.shape))
+    return window, a_rec, b_rec, a_ref, b_ref
+
+
+def test_normalised_report_equals_the_report_of_scaled_operators():
+    window, a_rec, b_rec, a_ref, b_ref = _synthetic_blocks()
+    S = np.array([1.0, 1.0, 1 / 50.0, 1 / 50.0])
+    base = rad.reconstruction_criteria_from_dict(FULL_BLOCK)
+    normalised = dataclasses.replace(base, dof_scales=tuple(S))
+    got = rad._full_block_report(normalised, window, a_rec, b_rec, a_ref, b_ref, None)
+    M = S[:, None] * S[None, :]
+    want = rad._full_block_report(base, window, a_rec * M, b_rec * M, a_ref * M, b_ref * M, None)
+    assert np.array_equal(got.impedance_rel_error, want.impedance_rel_error)
+    assert np.array_equal(got.added_mass_modal_error, want.added_mass_modal_error)
+    assert np.array_equal(got.damping_coefficient_error, want.damping_coefficient_error)
+    unit = dataclasses.replace(base, dof_scales=(1.0, 1.0, 1.0, 1.0))      # translation-only: a no-op
+    plain = rad._full_block_report(base, window, a_rec, b_rec, a_ref, b_ref, None)
+    same = rad._full_block_report(unit, window, a_rec, b_rec, a_ref, b_ref, None)
+    assert np.array_equal(plain.impedance_rel_error, same.impedance_rel_error)
+
+
+def test_dof_scales_serialisation_legacy_form_and_refusals():
+    base = rad.reconstruction_criteria_from_dict(FULL_BLOCK)
+    assert "dof_scales" not in base.to_dict()
+    scaled = dataclasses.replace(base, dof_scales=(1.0, 0.02))
+    assert rad.reconstruction_criteria_from_dict(scaled.to_dict()) == scaled
+    with pytest.raises(rad.ReconstructionCriteriaError, match="dof_scales"):
+        dataclasses.replace(base, dof_scales=(1.0, -1.0))
+    window, a_rec, b_rec, a_ref, b_ref = _synthetic_blocks()
+    with pytest.raises(rad.ReconstructionCriteriaError, match="4 DOFs"):
+        rad._full_block_report(scaled, window, a_rec, b_rec, a_ref, b_ref, None)

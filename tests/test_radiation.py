@@ -581,3 +581,46 @@ def test_public_exports_available():
         "radiation_kernel_hash", "RadiationError",
     ):
         assert hasattr(anyhydro, name)
+
+
+# ---------------------------------------------------------------- ADR-015 L6-4 H-b: Bartlett time window
+
+def test_bartlett_window_is_the_rectangular_kernel_times_the_taper(oracle):
+    ds, settings, _, _, _, _ = oracle
+    H = 0.5 * settings.kernel_duration
+    rect = rad.radiation_kernel_from_dataset(ds, dataclasses.replace(settings, time_window=H))
+    bart = rad.radiation_kernel_from_dataset(
+        ds, dataclasses.replace(settings, time_window=H, time_window_shape=rad.TIME_WINDOW_BARTLETT))
+    t = np.asarray(rect.time)
+    taper = np.clip(1.0 - t / H, 0.0, None)
+    assert np.array_equal(np.asarray(bart.kernel), np.asarray(rect.kernel) * taper[:, None, None])
+    assert not np.any(np.asarray(bart.kernel)[t >= H])
+
+
+def test_bartlett_settings_round_trip_and_legacy_hash_unchanged(oracle):
+    _, settings, _, _, _, _ = oracle
+    legacy = dataclasses.replace(settings, time_window=1.0)
+    assert "time_window_shape" not in legacy.to_dict()
+    tapered = dataclasses.replace(legacy, time_window_shape=rad.TIME_WINDOW_BARTLETT)
+    assert tapered.to_dict()["time_window_shape"] == "bartlett"
+    assert rad.RadiationSettings.from_dict(tapered.to_dict()).to_dict() == tapered.to_dict()
+    with pytest.raises(rad.RadiationSettingsError, match="requires an explicit time_window"):
+        dataclasses.replace(settings, time_window=None, time_window_shape=rad.TIME_WINDOW_BARTLETT)
+    with pytest.raises(rad.RadiationSettingsError, match="time_window_shape"):
+        dataclasses.replace(legacy, time_window_shape="hann")
+
+
+def test_bartlett_tapered_passive_kernel_has_a_non_negative_symbol(oracle):
+    """Energy note (ANYmarine docs/linear_memory_energy_note.md): the tapered passive kernel's Toeplitz symbol
+    dt (K_0 + 2 sum K_l cos(l theta)) is PSD; the rectangular cut of the same kernel is not guaranteed to be."""
+    ds, settings, _, _, _, _ = oracle
+    H = 0.5 * settings.kernel_duration
+    bart = rad.radiation_kernel_from_dataset(
+        ds, dataclasses.replace(settings, time_window=H, time_window_shape=rad.TIME_WINDOW_BARTLETT))
+    K = np.asarray(bart.kernel)
+    theta = np.linspace(0.0, np.pi, 1025)
+    weights = 2.0 * np.cos(np.outer(theta, np.arange(K.shape[0])))
+    weights[:, 0] = 1.0
+    symbol = settings.dt * np.einsum("tl,lij->tij", weights, K)
+    symbol = 0.5 * (symbol + np.swapaxes(symbol, 1, 2))
+    assert np.min(np.linalg.eigvalsh(symbol)) >= -1e-9 * np.abs(symbol).max()
