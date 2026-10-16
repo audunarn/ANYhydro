@@ -119,6 +119,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_vessel_study_run | real Capytaine solves needing the optional `anyhydro[capytaine]` extra; imports `test_capytaine_backend` | ADR-015 L6-4 vessel source campaign after the ANYmarine L6-F2 gate |
 | test_mean_drift_export | real Capytaine Kochin-export solves needing the optional `anyhydro[capytaine]` extra; imports `test_capytaine_backend` | MD2 mean-drift validation evidence (V2-V5) against real Capytaine solves |
 | test_excitation_source | module-level `from anyloads import RegularWave` needs the optional `anyhydro[sea-state]` extra | sea-state integration qualification with ANYloads |
+| test_drift_series | module-level ANYloads imports need the optional `anyhydro[sea-state]` extra | N4 slow-drift evidence (Newman vs OrcaWave full QTFs, moored irregular-sea run) |
 | test_sea_excitation | module-level ANYloads imports need the optional `anyhydro[sea-state]` extra | sea-state integration qualification with ANYloads |
 | test_hams_backend | module-level `anyfileio.hams` import plus stored native HAMS output fixtures; native producers must never be executed to make unit tests pass | HAMS lifecycle qualification with stored outputs and ANYfileio |
 | test_hams_field_backend | imports `test_hams_backend` (ANYfileio plus stored native outputs) | HAMS field lifecycle qualification |

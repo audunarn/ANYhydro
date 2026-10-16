@@ -126,3 +126,14 @@ wave_direction, drift_dof)` on the dataset's own frequency grid; `attrs['newman_
 `qtf_at` looks values up at exact grid points only - no interpolation. Limits: small difference frequencies
 relative to the band; surge, sway and yaw only; unidirectional (one heading, no cross-heading terms); accuracy of the
 approximation itself is measured in slice N4 against OrcaWave full QTFs.
+
+Slow-drift force series (slice N2): `build_drift_series(dataset, realization, method)` with an ANYloads
+`WaveRealization` (elevation a cos(w t - phi) at the global origin, the first-order `ExcitationSeries` convention)
+gives `DriftSeries` with F2(t) = sum_i sum_j a_i a_j T(w_i, w_j) cos((w_i - w_j) t - (phi_i - phi_j)) per drift DOF,
+evaluated exactly without the pair sum (geometric: sign groups s |sum a_i sqrt|D_i| e^{i theta_i}|^2; arithmetic:
+Re[(sum a_i D_i e^{i theta_i}) conj(sum a_j e^{i theta_j})], theta_i = w_i t - phi_i); `mean()` = sum a_i^2 D(w_i).
+D(w) at a component frequency is linearly interpolated from the stored mean drift inside its range (never
+extrapolated) - interpolating the computed, smooth, real drift curve, not first-order fields. The realization must be
+unidirectional and its heading must equal a dataset heading (modulo 2 pi, 1e-12 rad); mixed headings are refused.
+The series binds the realization hash, the dataset content hash and the drift-array hash; `verify_drift_binding`
+rebuilds it from the authoritative inputs.

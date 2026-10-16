@@ -132,6 +132,11 @@ EXCLUDED_TEST_MODULES = {
         "anyhydro[sea-state] extra. Remaining gate: sea-state integration "
         "qualification with ANYloads."
     ),
+    "test_drift_series": (
+        "module-level ANYloads imports (AiryComponent, WaveRealization) need the optional "
+        "anyhydro[sea-state] extra. Remaining gate: N4 slow-drift evidence (Newman vs OrcaWave "
+        "full QTFs on the barge, moored irregular-sea run)."
+    ),
     "test_sea_excitation": (
         "module-level ANYloads imports (RegularWave, WaveRealization, JonswapSpectrum, "
         "DirectionalSpectrum) need the optional anyhydro[sea-state] extra. Remaining "
