@@ -180,11 +180,12 @@ def test_schema_refuses_foreign_drift_dofs_units_and_coarse_theta(exported):
             validate_hydro_dataset(good.assign_coords(drift_dof=dofs))
     meta = json.loads(good.attrs["mean_drift_far_field"])
     meta["units"] = "bananas"
-    bad = good.copy()
+    bad = good.copy(deep=True)                      # attrs are shared by shallow copies
     bad.attrs["mean_drift_far_field"] = json.dumps(meta)
     with pytest.raises(SchemaError, match="units"):
         validate_hydro_dataset(bad)
-    coarse = exported.isel(theta=slice(0, None, exported["theta"].size // 8))
+    # deep copy: isel shares the attrs dict with the module-scoped fixture, and writing to it polluted later tests
+    coarse = exported.isel(theta=slice(0, None, exported["theta"].size // 8)).copy(deep=True)
     export = json.loads(coarse.attrs["kochin_export"])
     export["theta_count"] = int(coarse["theta"].size)
     coarse.attrs["kochin_export"] = json.dumps(export)

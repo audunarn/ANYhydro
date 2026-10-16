@@ -279,19 +279,31 @@ def validate_kochin_extension(ds: xr.Dataset) -> None:
              and export["reference_point"] == [0.0, 0.0] and int(export["theta_count"]) == n,
              "attribute 'kochin_export' must record route, world-origin reference_point and theta_count")
     if "mean_drift_far_field" in ds.data_vars:
-        _require(tuple(ds["mean_drift_far_field"].dims) == ("omega", "wave_direction", "drift_dof")
-                 and ds["mean_drift_far_field"].dtype == np.float64,
-                 "variable 'mean_drift_far_field' must be float64 with dims (omega, wave_direction, drift_dof)")
-        _check_finite(ds["mean_drift_far_field"], "mean_drift_far_field")
-        dofs = [str(v) for v in ds["drift_dof"].values]
-        bodies = [str(b) for b in ds["body"].values]
-        _require(len(bodies) == 1 and dofs == [f"{bodies[0]}::{d}" for d in ("surge", "sway", "yaw")],
-                 "coordinate 'drift_dof' must be the dataset body's qualified (surge, sway, yaw)")
-        meta = _json_attr(ds, "mean_drift_far_field")
-        _require(isinstance(meta, dict) and meta.get("method") == "far_field_momentum_conservation"
-                 and meta.get("units") == MEAN_DRIFT_UNITS
-                 and isinstance(meta.get("motions"), dict) and meta["motions"].get("motion_hash"),
-                 "attribute 'mean_drift_far_field' must record the method, the units and the motion provenance")
+        validate_mean_drift_block(ds)
+
+
+def validate_mean_drift_block(ds: xr.Dataset) -> None:
+    """The mean_drift_far_field block of a dataset: array, body-qualified (surge, sway, yaw), method, units, motion
+    provenance and a yaw reference equal to the dataset rotation centre. Raises SchemaError."""
+    _require("mean_drift_far_field" in ds.data_vars, "dataset lacks 'mean_drift_far_field'")
+    _require(tuple(ds["mean_drift_far_field"].dims) == ("omega", "wave_direction", "drift_dof")
+             and ds["mean_drift_far_field"].dtype == np.float64,
+             "variable 'mean_drift_far_field' must be float64 with dims (omega, wave_direction, drift_dof)")
+    _check_finite(ds["mean_drift_far_field"], "mean_drift_far_field")
+    dofs = [str(v) for v in ds["drift_dof"].values]
+    bodies = [str(b) for b in ds["body"].values]
+    _require(len(bodies) == 1 and dofs == [f"{bodies[0]}::{d}" for d in ("surge", "sway", "yaw")],
+             "coordinate 'drift_dof' must be the dataset body's qualified (surge, sway, yaw)")
+    meta = _json_attr(ds, "mean_drift_far_field")
+    _require(isinstance(meta, dict) and meta.get("method") == "far_field_momentum_conservation"
+             and meta.get("units") == MEAN_DRIFT_UNITS
+             and isinstance(meta.get("motions"), dict) and meta["motions"].get("motion_hash"),
+             "attribute 'mean_drift_far_field' must record the method, the units and the motion provenance")
+    centre = np.asarray(ds["rotation_center"].values, dtype=float).reshape(-1, 3)[0]
+    reference = meta.get("yaw_reference")
+    _require(isinstance(reference, list) and len(reference) == 3
+             and [float(v) for v in reference] == [float(v) for v in centre],
+             "the mean-drift yaw reference must equal the dataset rotation centre")
 
 
 def validate_hydro_dataset(ds: xr.Dataset) -> xr.Dataset:
