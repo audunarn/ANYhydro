@@ -178,7 +178,7 @@ from .transform import (
     skew,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     'ExcitationSeries', 'ExcitationSeriesError', 'build_excitation_series', 'verify_excitation_binding', 'UNIT_INCIDENT_AMPLITUDE',
