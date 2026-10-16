@@ -122,3 +122,66 @@ def test_other_refusals():
     for omega in (OMEGA[::-1], np.array([0.4, 0.5, 0.5, 0.7, 0.8])):
         with pytest.raises(SlowDriftError, match="strictly increasing"):
             newman_qtf(_dataset().assign_coords(omega=omega))
+
+
+# ---------------------------------------------------------------------------------------- N2b: stored datasets
+
+def _full_dataset():
+    """A full schema 1.3.0 single-body dataset (synthetic fixture body; zero Kochin functions, as the Capytaine
+    export lays them out) with the mean-drift block; JSON attributes as JSON strings, the computed form."""
+    from anyhydro import fixtures
+    from anyhydro.records import HydroRequest
+    from anyhydro.schema import KOCHIN_SCHEMA_VERSION, assemble_hydro_dataset
+    body = fixtures.make_fixture_bodies()[0]
+    request = HydroRequest(omegas=OMEGA.copy(), wave_directions=HEADINGS.copy(), water_depth=np.inf, rho=1025.0,
+                           gravity=9.81, include_zero_frequency=False, include_infinite_frequency=False,
+                           backend_settings={"fixture": "n2b-stored"})
+    n = len(OMEGA)
+    A = np.tile(np.eye(6), (n, 1, 1)) * 1e3
+    ds = assemble_hydro_dataset(
+        (body,), request, added_mass=A, radiation_damping=0.1 * A, excitation_force=np.ones((n, 2, 6), complex),
+        hydrostatic_stiffness=np.eye(6), rotation_center=np.array([body.rotation_center]),
+        center_of_mass=np.array([body.center_of_mass]), center_of_buoyancy=np.array([body.rotation_center]),
+        added_mass_infinite=None, added_mass_infinite_source=None, backend="synthetic", backend_version="1",
+        backend_commit="unknown", qualification_status="development_fixture")
+    n_theta = 720
+    ds = ds.assign_coords(theta=2.0 * np.pi * np.arange(n_theta) / n_theta,
+                          drift_dof=[f"{body.body_id}::{d}" for d in ("surge", "sway", "yaw")])
+    ds["kochin_radiation"] = (("omega", "radiating_dof", "theta"), np.zeros((n, 6, n_theta), complex))
+    ds["kochin_diffraction"] = (("omega", "wave_direction", "theta"), np.zeros((n, 2, n_theta), complex))
+    ds["wavenumber"] = (("omega",), OMEGA ** 2 / 9.81)
+    for name, value in (("water_depth", np.inf), ("rho", 1025.0), ("g", 9.81)):
+        ds[name] = ((), np.float64(value))
+    ds.attrs["wave_environment"] = json.dumps(dict(water_depth="inf", rho=1025.0, g=9.81))
+    ds.attrs["kochin_export"] = json.dumps(dict(route="zero test fixture", reference_point=[0.0, 0.0],
+                                                theta_count=n_theta))
+    ds.attrs["schema_version"] = KOCHIN_SCHEMA_VERSION
+    ds["mean_drift_far_field"] = (("omega", "wave_direction", "drift_dof"), _drift())
+    ds.attrs["mean_drift_far_field"] = json.dumps(dict(
+        format=MEAN_DRIFT_FORMAT, method="far_field_momentum_conservation", units=MEAN_DRIFT_UNITS,
+        yaw_reference=[float(v) for v in body.rotation_center], motions=dict(source="fixed", motion_hash="x")))
+    return ds
+
+
+def test_a_stored_dataset_hashes_alike_and_gives_the_same_qtf(tmp_path):
+    """A loaded dataset carries the JSON records decoded: the QTF and the content hash must not depend on that."""
+    from anyhydro import dataset_content_hash, load_hydro_dataset, save_hydro_dataset
+    ds = _full_dataset()
+    save_hydro_dataset(ds, tmp_path / "ds.nc")
+    loaded = load_hydro_dataset(tmp_path / "ds.nc")
+    assert isinstance(loaded.attrs["mean_drift_far_field"], dict)
+    assert dataset_content_hash(loaded) == dataset_content_hash(ds)
+    for method in ("geometric", "arithmetic"):
+        a, b = newman_qtf(ds, method), newman_qtf(loaded, method)
+        assert np.array_equal(a["newman_qtf"].values, b["newman_qtf"].values)
+        assert json.loads(a.attrs["newman_qtf"]) == json.loads(b.attrs["newman_qtf"])
+
+
+def test_a_record_that_is_neither_json_text_nor_a_mapping_is_refused():
+    ds = _dataset()
+    ds.attrs["mean_drift_far_field"] = "{not json"
+    with pytest.raises(SlowDriftError, match="not JSON"):
+        newman_qtf(ds)
+    ds.attrs["mean_drift_far_field"] = 3
+    with pytest.raises(SlowDriftError, match="record"):
+        newman_qtf(ds)

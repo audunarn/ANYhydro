@@ -38,6 +38,11 @@ JSON_DATASET_ATTRS = (
     "excitation_source_contract",
     "wamit_import",
     "reciprocity_diagnostic",
+    # optional 1.3.0 extension (Kochin export, far-field mean drift): a computed dataset carries these as JSON
+    # strings, a loaded one as decoded mappings; both must hash alike (absent on older datasets: unchanged)
+    "wave_environment",
+    "kochin_export",
+    "mean_drift_far_field",
 )
 
 

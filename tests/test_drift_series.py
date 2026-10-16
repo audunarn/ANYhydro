@@ -187,3 +187,15 @@ def test_chunk_boundary_and_zero_drift_components():
     t = np.linspace(0.0, 600.0, 5000)
     assert np.allclose(zeroed.evaluate(t), _direct(zeroed, t), rtol=1e-10, atol=1e-6)
     assert np.allclose(s.evaluate(t), _direct(s, t), rtol=1e-10, atol=1e-6)
+
+
+def test_a_stored_dataset_gives_the_same_series(tmp_path):
+    """N2b: the loaded dataset (decoded JSON records) builds the identical series, bound to the same hash."""
+    from anyhydro import load_hydro_dataset, save_hydro_dataset
+    from test_slow_drift import _full_dataset
+    ds = _full_dataset()
+    save_hydro_dataset(ds, tmp_path / "ds.nc")
+    loaded = load_hydro_dataset(tmp_path / "ds.nc")
+    waves = _waves((1.0, 0.45, 0.0, 0.1), (0.7, 0.62, 0.0, 2.0))
+    assert build_drift_series(loaded, waves).content_hash == build_drift_series(ds, waves).content_hash
+    assert verify_drift_binding(build_drift_series(ds, waves), loaded, waves)

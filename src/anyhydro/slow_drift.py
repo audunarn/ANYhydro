@@ -70,8 +70,12 @@ def _validated(dataset: xr.Dataset):
     _require(isinstance(dataset, xr.Dataset) and "mean_drift_far_field" in dataset.data_vars,
              "dataset lacks 'mean_drift_far_field' (compute the far-field mean drift first)")
     record = dataset.attrs.get("mean_drift_far_field")
-    _require(isinstance(record, str), "dataset lacks the mean_drift_far_field record (attrs)")
-    source = json.loads(record)
+    # a computed dataset carries the record as a JSON string, a loaded one as its decoded mapping (persistence)
+    _require(isinstance(record, (str, Mapping)), "dataset lacks the mean_drift_far_field record (attrs)")
+    try:
+        source = json.loads(record) if isinstance(record, str) else json.loads(json.dumps(dict(record)))
+    except (TypeError, ValueError) as error:
+        raise SlowDriftError(f"the mean_drift_far_field record is not JSON: {error}") from error
     from .mean_drift import MEAN_DRIFT_FORMAT
     from .schema import validate_mean_drift_block
     from .errors import SchemaError
