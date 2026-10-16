@@ -132,3 +132,58 @@ def test_other_refusals():
     s = build_drift_series(_dataset(), _waves((1.0, 0.5, 360.0, 0.0)))   # 360 deg == the dataset heading 0
     assert s.heading_radians == float(HEADINGS[0])
     assert OMEGA[0] <= s.omegas[0] <= OMEGA[-1]
+
+
+# ---------------------------------------------------------------------------------------------- review round 1
+
+@pytest.mark.parametrize("method", ["geometric", "arithmetic"])
+@pytest.mark.parametrize("phase2, factor", [(0.0, 4.0), (math.pi, 0.0)])
+def test_mean_includes_coherent_repeated_frequencies(method, phase2, factor):
+    """Two components at one frequency: the cross term is constant (in phase: 4 D, opposite: 0) and is in the mean."""
+    s = build_drift_series(_dataset(), _waves((1.0, 0.6, 0.0, 0.0), (1.0, 0.6, 0.0, phase2)), method)
+    D = s.drift[0]
+    assert np.allclose(s.mean(), factor * D, rtol=1e-12, atol=1e-9)
+    assert np.allclose(s.evaluate(T_GRID[:7]), factor * D, rtol=1e-12, atol=1e-9)
+
+
+def test_equivalent_component_headings_are_one_direction():
+    s = build_drift_series(_dataset(), _waves((1.0, 0.5, 0.0, 0.0), (0.5, 0.6, 360.0, 1.0), (0.4, 0.7, -360.0, 2.0)))
+    assert s.heading_radians == float(HEADINGS[0])
+
+
+def test_serialised_dof_keys_must_be_one_bodys_surge_sway_yaw():
+    s = build_drift_series(_dataset(), _waves((1.0, 0.5, 0.0, 0.0)))
+    for bad in ("abc", [1, 2, 3], ["b::surge", "b::sway", "c::yaw"], ["b::surge", "b::yaw", "b::sway"]):
+        with pytest.raises(SlowDriftError, match="DOF key"):
+            DriftSeries.from_dict(dict(s.to_dict(), dof_keys=bad))
+
+
+@pytest.mark.parametrize("method", ["geometric", "arithmetic"])
+def test_mean_of_extreme_finite_inputs_is_representable(method):
+    base = build_drift_series(_dataset(), _waves((1.0, 0.5, 0.0, 0.0)), method).to_dict()
+    for a, d, expected in ((1e-200, 1e308, 1e-92), (1e200, 1e-308, 1e92)):
+        s = DriftSeries.from_dict(dict(base, amplitudes=[a], drift=[[d, d, d]]))
+        assert np.allclose(s.mean(), expected, rtol=1e-12)
+
+
+def test_long_times_keep_the_difference_frequency_precision():
+    """Against the difference-frequency double sum (exact phases (w_i - w_j) t): a common carrier is removed."""
+    s = build_drift_series(_dataset(), _waves((1.0, 0.5, 0.0, 0.3), (0.8, 0.6, 0.0, -0.4)))
+    t = np.array([1e9, 1e9 + 0.25])
+    ref = np.zeros((2, 3))
+    for k in range(3):
+        T = newman_values(s.drift[:, k], s.method)
+        for i in range(2):
+            for j in range(2):
+                ref[:, k] += (s.amplitudes[i] * s.amplitudes[j] * T[i, j]
+                              * np.cos((s.omegas[i] - s.omegas[j]) * t - (s.phases[i] - s.phases[j])))
+    assert np.allclose(s.evaluate(t), ref, rtol=1e-6, atol=1e-6 * np.max(np.abs(ref)))
+
+
+def test_chunk_boundary_and_zero_drift_components():
+    """Times across the 2048 chunk and a component whose drift is exactly zero."""
+    s = build_drift_series(_dataset(), _waves((1.0, 0.45, 0.0, 0.0), (0.7, 0.62, 0.0, 1.0)))
+    zeroed = DriftSeries.from_dict(dict(s.to_dict(), drift=[[0.0, 0.0, 0.0], list(s.drift[1])]))
+    t = np.linspace(0.0, 600.0, 5000)
+    assert np.allclose(zeroed.evaluate(t), _direct(zeroed, t), rtol=1e-10, atol=1e-6)
+    assert np.allclose(s.evaluate(t), _direct(s, t), rtol=1e-10, atol=1e-6)

@@ -9,9 +9,12 @@ value per heading), Newman's approximation (Newman 1974) builds the difference-f
     geometric (default):  T_k(w_i, w_j) = s * sqrt(|D_k(w_i) D_k(w_j)|),  s = sign D_k(w_i) if the signs agree, else 0
     arithmetic:           T_k(w_i, w_j) = (D_k(w_i) + D_k(w_j)) / 2
 
-Both are real, symmetric and reproduce the mean drift exactly on the diagonal. The QTF exists only on the dataset's
-frequency grid: values are looked up at grid points, never interpolated (an interpolated first-order basis gave
-garbage second-order loads in the NEMOH evaluation, 2026-10-16). Limits: valid for small difference frequencies
+Both are real, symmetric and reproduce the mean drift exactly on the diagonal. The stored QTF (``newman_qtf``,
+``qtf_at``) exists only on the dataset's frequency grid: values are looked up at grid points, never interpolated (an
+interpolated first-order basis gave garbage second-order loads in the NEMOH evaluation, 2026-10-16). The drift time
+series (``build_drift_series``, slice N2) instead interpolates the computed, real mean-drift curve D(w) linearly to
+the component frequencies and applies the Newman rule to those values - which in general differs from interpolating
+QTF entries; it is declared in the contract (section 8). Limits: valid for small difference frequencies
 relative to the band; surge, sway and yaw only (the far-field drift has no heave/roll/pitch); unidirectional (one
 heading per QTF; no cross-heading terms).
 """
@@ -165,8 +168,13 @@ class DriftSeries:
     drift_sha256: str
 
     def __post_init__(self):
-        keys = tuple(str(k) for k in self.dof_keys)
-        _require(len(keys) == 3 and len(set(keys)) == 3, "three distinct drift DOF keys (surge, sway, yaw) required")
+        _require(isinstance(self.dof_keys, (list, tuple)) and len(self.dof_keys) == 3
+                 and all(isinstance(k, str) for k in self.dof_keys), "three drift DOF key strings required")
+        keys = tuple(self.dof_keys)
+        bodies = {k.split("::")[0] for k in keys}
+        _require(len(bodies) == 1 and all(k.count("::") == 1 for k in keys)
+                 and [k.split("::")[1] for k in keys] == ["surge", "sway", "yaw"] and next(iter(bodies)) != "",
+                 "drift DOF keys must be one body's ordered 'body::surge', 'body::sway', 'body::yaw'")
         w = _real_array(self.omegas, "omega", 1)
         a = _real_array(self.amplitudes, "amplitude", 1)
         ph = _real_array(self.phases, "phase", 1)
@@ -186,8 +194,11 @@ class DriftSeries:
         """F2 at the given times, shape (len(times), 3)."""
         t = _real_array(times, "times", 1)
         out = np.empty((len(t), 3))
+        # a common carrier w_ref leaves both forms unchanged (it cancels in |.|^2 and in a conj product) and keeps
+        # only the small (w_i - w_ref) t in the exponent: long-time precision of the difference frequencies
+        w_rel = self.omegas - float(np.mean(self.omegas))
         for start in range(0, len(t), 2048):
-            theta = t[start:start + 2048, None] * self.omegas[None, :] - self.phases[None, :]
+            theta = t[start:start + 2048, None] * w_rel[None, :] - self.phases[None, :]
             e = np.exp(1j * theta)                                              # (time, component)
             for k in range(3):
                 D = self.drift[:, k]
@@ -206,8 +217,25 @@ class DriftSeries:
         return out
 
     def mean(self) -> np.ndarray:
-        """Time-mean slow-drift force: sum_i a_i^2 D(w_i) (the diagonal), shape (3,)."""
-        return (self.amplitudes[:, None] ** 2 * self.drift).sum(axis=0)
+        """Time-mean slow-drift force, shape (3,): the pairs with equal frequency (the diagonal and any coherent
+        repeated-frequency components, whose cross terms are constant), evaluated by the same exact forms per
+        frequency group with scaled products (no overflow/underflow of a_i^2 alone)."""
+        out = np.zeros(3)
+        for w in np.unique(self.omegas):
+            g = self.omegas == w
+            e = np.exp(-1j * self.phases[g])
+            a = self.amplitudes[g]
+            for k in range(3):
+                D = self.drift[g, k]
+                if self.method == "arithmetic":
+                    out[k] += (np.sum(a * D * e) * np.conj(np.sum(a * e))).real
+                else:
+                    for sign in (1.0, -1.0):
+                        sel = np.sign(D) == sign
+                        if np.any(sel):
+                            out[k] += sign * abs(np.sum(a[sel] * np.sqrt(np.abs(D[sel])) * e[sel])) ** 2
+        _require(bool(np.all(np.isfinite(out))), "nonfinite mean drift force")
+        return out
 
     def to_dict(self) -> dict:
         return dict(api_version=DRIFT_SERIES_VERSION, dof_keys=list(self.dof_keys), omegas=self.omegas.tolist(),
@@ -255,13 +283,15 @@ def build_drift_series(dataset: xr.Dataset, realization, method: str = "geometri
     source, drift, omega = _validated(dataset)
     from .hashing import dataset_content_hash
     components = realization.components
-    directions = {c.direction_degrees for c in components}
-    _require(len(directions) == 1, "a unidirectional realization (one heading) is required for Newman slow drift")
-    heading = math.radians(next(iter(directions)))
     headings = np.asarray(dataset["wave_direction"].values, dtype=float)
-    distance = np.abs(np.remainder(headings - heading + math.pi, math.tau) - math.pi)
-    match = np.flatnonzero(distance <= 1e-12)
-    _require(match.size == 1, "the wave heading requires one exact dataset heading; no interpolation")
+    matches = set()
+    for c in components:                                     # each component heading, modulo 2 pi within 1e-12 rad
+        distance = np.abs(np.remainder(headings - math.radians(c.direction_degrees) + math.pi, math.tau) - math.pi)
+        hit = np.flatnonzero(distance <= 1e-12)
+        _require(hit.size == 1, "the wave heading requires one exact dataset heading; no interpolation")
+        matches.add(int(hit[0]))
+    _require(len(matches) == 1, "a unidirectional realization (one heading) is required for Newman slow drift")
+    match = [matches.pop()]
     D = np.asarray(drift.values[:, match[0], :], dtype=np.float64)                 # (omega, 3)
     w = np.array([c.omega for c in components])
     _require(bool(np.all((w >= omega[0]) & (w <= omega[-1]))), "wave frequency outside the stored mean-drift range")
