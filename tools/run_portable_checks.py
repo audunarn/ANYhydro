@@ -60,6 +60,7 @@ PORTABLE_TEST_MODULES = (
     "test_panel_integration_candidate",
     "test_persistence",
     "test_physical_green_field",
+    "test_slow_drift",
     "test_portable_ci_contract",
     "test_prony_fit",
     "test_radiation",

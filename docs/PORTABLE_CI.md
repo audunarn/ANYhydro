@@ -76,6 +76,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_panel_accuracy_reference | panel accuracy reference contracts (mock Capytaine) |
 | test_panel_integration_candidate | panel integration candidate admission (mocked backend) |
 | test_persistence | persistence round trips |
+| test_slow_drift | Newman difference-frequency QTF from the far-field mean drift (numpy/xarray only, no BEM) |
 | test_portable_ci_contract | this selection contract |
 | test_radiation | radiation kernels and admission |
 | test_radiation_full_block | band-consistent A_inf, body-diagonal tail and full-block reconstruction criteria |

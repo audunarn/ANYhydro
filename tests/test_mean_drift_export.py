@@ -201,3 +201,15 @@ def test_dispersion_check_admits_newton_wavenumbers_but_refuses_wrong_ones():
     validate_hydro_dataset(ds.assign(wavenumber=("omega", k * (1 + 1e-10))))     # Newton-level differences
     with pytest.raises(SchemaError, match="dispersion"):
         validate_hydro_dataset(ds.assign(wavenumber=("omega", k * (1 + 1e-6))))
+
+
+def test_newman_qtf_from_a_real_drift_dataset(exported):
+    """N1: the Newman QTF built from a real far-field drift reproduces it on the diagonal and binds its record."""
+    import json
+    from anyhydro.slow_drift import newman_qtf
+    ds = md.far_field_mean_drift(exported, _zero_motions(exported), {"source": "fixed"})
+    q = newman_qtf(ds)
+    diag = np.einsum("iihk->ihk", q["newman_qtf"].values)
+    assert np.array_equal(diag, ds["mean_drift_far_field"].values)
+    assert json.loads(q.attrs["newman_qtf"])["source_mean_drift"]["motions"]["source"] == "fixed"
+

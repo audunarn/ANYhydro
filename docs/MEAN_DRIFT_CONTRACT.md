@@ -113,3 +113,16 @@ given directly, e.g. validation) or `matrices_hash` (non-empty) and `damping` in
 ## 7. Limits
 Linear free surface (z = 0); far field gives no heave/roll/pitch drift; drift near resonance is as accurate as the
 supplied motions.
+
+## 8. Newman slow drift (slice N1, 2026-10-16)
+`anyhydro.slow_drift.newman_qtf(dataset, method)` builds the difference-frequency QTF of a dataset carrying
+`mean_drift_far_field` by Newman's approximation (owner decision 2026-10-16, after the NEMOH evaluation: Nemoh2 was
+8-31 % off OrcaWave full QTFs on the B3y barge and is not adopted):
+- `geometric` (default): T(w_i, w_j) = s sqrt(|D(w_i) D(w_j)|), s = sign D(w_i) when the signs agree, else 0;
+- `arithmetic`: T(w_i, w_j) = (D(w_i) + D(w_j)) / 2.
+Both are real, symmetric and equal the mean drift on the diagonal. Output `newman_qtf(omega_1, omega_2,
+wave_direction, drift_dof)` on the dataset's own frequency grid; `attrs['newman_qtf']` records the format
+(`anyhydro-newman-difference-qtf-v1`), method, units and the full source mean-drift record (incl. the motion hash).
+`qtf_at` looks values up at exact grid points only - no interpolation. Limits: small difference frequencies
+relative to the band; surge, sway and yaw only; unidirectional (one heading, no cross-heading terms); accuracy of the
+approximation itself is measured in slice N4 against OrcaWave full QTFs.
