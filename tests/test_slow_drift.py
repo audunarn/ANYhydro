@@ -62,7 +62,7 @@ def test_geometric_rule_values_signs_and_zeros():
 @pytest.mark.parametrize("method", ["geometric", "arithmetic"])
 def test_extreme_finite_values_keep_an_exact_diagonal(method):
     """Review round 1: no intermediate overflow or underflow."""
-    D = np.array([1e200, 1e-200, 1e308, -1e308])
+    D = np.array([1e200, 1e-200, 1e308, -1e308, np.nextafter(0.0, 1.0)])     # incl. the smallest subnormal
     T = newman_values(D, method)
     assert np.all(np.isfinite(T))
     assert np.array_equal(np.diag(T), D)

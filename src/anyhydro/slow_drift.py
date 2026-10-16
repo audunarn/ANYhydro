@@ -49,10 +49,11 @@ def newman_values(D: np.ndarray, method: str = "geometric") -> np.ndarray:
     _require(D.ndim >= 1 and D.shape[0] >= 1 and bool(np.all(np.isfinite(D))), "mean drift must be finite")
     Di, Dj = D[:, None, ...], D[None, :, ...]
     if method == "arithmetic":
-        return 0.5 * Di + 0.5 * Dj                       # no intermediate overflow; exact on the diagonal
-    same = np.sign(Di) == np.sign(Dj)
-    root_i, root_j = np.sqrt(np.abs(Di)), np.sqrt(np.abs(Dj))   # no product overflow/underflow
-    T = np.where(same, np.sign(Di) * root_i * root_j, 0.0)
+        T = 0.5 * Di + 0.5 * Dj                           # no intermediate overflow
+    else:
+        same = np.sign(Di) == np.sign(Dj)
+        root_i, root_j = np.sqrt(np.abs(Di)), np.sqrt(np.abs(Dj))   # no product overflow/underflow
+        T = np.where(same, np.sign(Di) * root_i * root_j, 0.0)
     n = D.shape[0]
     T[np.arange(n), np.arange(n)] = D                     # the diagonal is the mean drift exactly
     return T
