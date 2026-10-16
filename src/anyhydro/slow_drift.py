@@ -70,8 +70,9 @@ def _validated(dataset: xr.Dataset):
     _require(isinstance(dataset, xr.Dataset) and "mean_drift_far_field" in dataset.data_vars,
              "dataset lacks 'mean_drift_far_field' (compute the far-field mean drift first)")
     record = dataset.attrs.get("mean_drift_far_field")
-    # a computed dataset carries the record as a JSON string, a loaded one as its decoded mapping (persistence)
-    _require(isinstance(record, (str, Mapping)), "dataset lacks the mean_drift_far_field record (attrs)")
+    # a computed dataset carries the record as a JSON string, a loaded one as its decoded dict (persistence); the
+    # schema check below accepts exactly these two forms
+    _require(isinstance(record, (str, dict)), "dataset lacks the mean_drift_far_field record (attrs)")
     try:
         source = json.loads(record) if isinstance(record, str) else json.loads(json.dumps(dict(record)))
     except (TypeError, ValueError) as error:
