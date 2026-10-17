@@ -104,13 +104,15 @@ MAX_FINITE_OMEGAS = 3
 MAX_WAVE_DIRECTIONS = 1
 
 # First-slice preparation ceilings for EXPLICIT limits: the absolute
-# software panel ceiling is 6144 (raised 2026-10-12 from 2048 for the W5
-# extended-band case, levels 10/15 = 2400/5400 panels; dense S/K plus LU
-# stay near 2.5 GB); the heading ceiling stays at the development default;
+# software panel ceiling is 12288 (raised 2026-10-12 from 2048 for the W5
+# extended-band case, levels 10/15 = 2400/5400 panels; raised 2026-10-17 from
+# 6144 by owner decision for the WAMIT-benchmark mesh convergence (exact
+# 210 m hull): dense complex S/K plus LU need about 7-10 GB at 12288 panels);
+# the heading ceiling stays at the development default;
 # the finite-frequency ceiling admits registered dense cases. Raising a
-# limit never confers run authority: cases above the 6144-panel capacity
+# limit never confers run authority: cases above the 12288-panel capacity
 # are refused honestly, with no autounbounded profile.
-_CEILING_TOTAL_PANELS = 6144
+_CEILING_TOTAL_PANELS = 12288
 _CEILING_FINITE_OMEGAS = 513
 _CEILING_WAVE_DIRECTIONS = 1
 _CEILING_JOBS = 1
@@ -164,7 +166,7 @@ class CapytaineExecutionLimits:
 
     Defaults preserve the tiny development budgets: 100 total panels,
     3 finite frequencies, 1 heading, one job and one thread. Explicit
-    limits may admit up to 6144 total panels (the absolute software
+    limits may admit up to 12288 total panels (the absolute software
     ceiling; the registered 384/864-panel source-study meshes need
     explicit limits and are still refused by the 100-panel DEFAULT) and
     up to 513 finite frequencies for later registered cases; the

@@ -108,15 +108,16 @@ Verified against installed Capytaine 3.0.0 source (no guessing):
 `CapytaineExecutionLimits` is the frozen public limits type, passed
 explicitly to `CapytaineBackend(execution_limits=...)`. Defaults preserve
 the tiny development budgets: 100 total panels, 3 finite frequencies,
-1 heading, `n_jobs=n_threads=1`. Explicit limits may admit up to 6144
-total panels (the absolute software panel ceiling; the registered
+1 heading, `n_jobs=n_threads=1`. Explicit limits may admit up to 12288
+total panels (the absolute software panel ceiling, raised from 6144 on
+2026-10-17 by owner decision, about 7-10 GB per solve; the registered
 384/864-panel source-study meshes require explicit limits and are still
 refused by the 100-panel DEFAULT) and up to 513 finite frequencies for
 later registered cases (never executed by default); the heading (1)
 ceiling stays fixed in this first-slice preparation and
 `n_jobs`/`n_threads` are pinned to 1 — no
 silent thread or environment overrides. Cases above the current
-6144-panel execution capacity are refused honestly; there is no
+12288-panel execution capacity are refused honestly; there is no
 autounbounded profile. All caps apply before cache
 lookup, and the effective limits are recorded in `capabilities()`,
 `diagnose()`, the cache identity and the dataset provenance attributes

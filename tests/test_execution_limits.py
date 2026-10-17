@@ -79,17 +79,18 @@ class TestLimitValidation:
             with pytest.raises(CapabilityError, match="positive"):
                 CapytaineExecutionLimits(**{field: bad})
 
-    def test_panel_ceiling_6144(self):
+    def test_panel_ceiling_12288(self):
         # absolute software ceiling for EXPLICIT limits (raised 2026-10-12
-        # for the W5 extended-band levels 10/15 = 2400/5400 panels); 6145
-        # is refused
+        # for the W5 extended-band levels 10/15 = 2400/5400 panels, and
+        # 2026-10-17 to 12288 by owner decision); 12289 is refused
         assert CapytaineExecutionLimits(max_total_panels=100).max_total_panels == 100
         assert CapytaineExecutionLimits(max_total_panels=864).max_total_panels == 864
         assert CapytaineExecutionLimits(max_total_panels=1536).max_total_panels == 1536
         assert CapytaineExecutionLimits(max_total_panels=2048).max_total_panels == 2048
         assert CapytaineExecutionLimits(max_total_panels=6144).max_total_panels == 6144
+        assert CapytaineExecutionLimits(max_total_panels=12288).max_total_panels == 12288
         with pytest.raises(CapabilityError, match="ceiling"):
-            CapytaineExecutionLimits(max_total_panels=6145)
+            CapytaineExecutionLimits(max_total_panels=12289)
 
     def test_frequency_ceiling_513(self):
         assert CapytaineExecutionLimits(max_finite_omegas=513).max_finite_omegas == 513
@@ -144,7 +145,7 @@ class TestBackendConstructor:
 
     def test_invalid_limits_rejected_at_construction(self):
         with pytest.raises(CapabilityError, match="ceiling"):
-            CapytaineBackend(execution_limits=CapytaineExecutionLimits(max_total_panels=6145))
+            CapytaineBackend(execution_limits=CapytaineExecutionLimits(max_total_panels=12289))
 
 
 # --------------------------------------------------------------------- #
