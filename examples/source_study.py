@@ -7,7 +7,7 @@ no BEM execution authority: ``execute`` requires the explicit
 ``--backend capytaine`` choice and constructs the real adapter under
 case-derived explicit ``CapytaineExecutionLimits`` (the 100-panel
 DEFAULT refuses the prospective refined levels; explicit limits admit
-them up to the adapter's absolute 2048-panel software ceiling). The CLI
+them up to the adapter's absolute software panel ceiling, docs/CAPYTAINE_ADAPTER.md). The CLI
 is a gate: only the full
 ``source_admission_passed_development_only`` outcome exits 0;
 no_go/failed/cancelled/incomplete outcomes exit with distinct nonzero

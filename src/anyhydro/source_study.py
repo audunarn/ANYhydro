@@ -13,7 +13,7 @@ authority — no solve is ever run here; the real Capytaine adapter is
 only constructed on the explicit execute path under case-derived
 explicit ``CapytaineExecutionLimits`` (the 100-panel DEFAULT refuses
 the prospective refined levels; explicit limits admit them up to the
-adapter's absolute 2048-panel software ceiling).
+adapter's absolute software panel ceiling, docs/CAPYTAINE_ADAPTER.md).
 
 Only public anyhydro APIs are used: the first-slice fixture builders and
 analytic verifier, the canonical schema validation, the dataset
@@ -1341,7 +1341,7 @@ def _cli_execute(args) -> int:
     # case-derived explicit caps through the PUBLIC execution limits and
     # backend constructor (the real production path; the 100-panel DEFAULT
     # would refuse the registered levels, explicit limits admit them up
-    # to the adapter's absolute 2048-panel software ceiling)
+    # to the adapter's absolute software panel ceiling, docs/CAPYTAINE_ADAPTER.md)
     limits = CapytaineExecutionLimits(
         max_total_panels=case.max_total_panels(),
         max_finite_omegas=len(case.omegas),

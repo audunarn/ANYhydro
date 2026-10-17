@@ -14,7 +14,7 @@ authority: no solve is ever run here. The real Capytaine adapter is only
 constructed on the explicit execute path under case-derived explicit
 `CapytaineExecutionLimits` (the 100-panel DEFAULT refuses the
 prospective refined levels; explicit limits admit them up to the
-adapter's absolute 2048-panel software ceiling), and the
+adapter's absolute software panel ceiling, docs/CAPYTAINE_ADAPTER.md), and the
 frozen raw 96-panel pilot is neither rerun nor re-stamped.
 
 ## Owned modules
