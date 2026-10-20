@@ -89,6 +89,14 @@ validated neutral dataset (validate_for_time_domain: explicit A_inf + source)
   calibration band below the reconstruction window.
 - `symmetry_tol`, `passivity_tol`: explicit validation tolerances. There is
   no blanket scientific default.
+- `tolerance_basis`: `"absolute"` (default; omitted from serialized settings,
+  so old hashes are unchanged) takes the two tolerances as SI values.
+  `"relative_to_damping_scale"` takes them as fractions of the max spectral
+  norm of the checked damping samples (passivity, damping symmetry) or of the
+  source-grid added-mass samples (added-mass symmetry). The scales and the
+  effective tolerances are recorded in the diagnostics (`damping_scale`,
+  `added_mass_scale`, `effective_*_tol`; present only for the relative basis).
+  Violations are still counted and reported, never clamped or repaired.
 - `execution_limits`: optional frozen public `RadiationExecutionLimits`
   (default `max_time_samples=1001`, minimum 2, hard ceiling 20001).
   Default `None` keeps the development cap and the exact old serialized

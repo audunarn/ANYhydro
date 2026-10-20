@@ -248,13 +248,18 @@ SETTINGS_SERIALIZED_KEYS = frozenset({
     "execution_limits", "quadrature_method",
     "high_tail_policy", "high_tail_exponent", "high_tail_upper", "high_tail_name",
     "high_tail_scope", "a_inf_policy", "a_inf_calibration_min", "a_inf_calibration_max",
-    "a_inf_calibration_dt", "time_window_shape",
+    "a_inf_calibration_dt", "time_window_shape", "tolerance_basis",
 })
 #: time-window shapes: legacy rectangular cut (zero after H) or the Bartlett taper (1 - t/H)+ whose transform (the
 #: Fejer kernel) is non-negative, so a passive spectrum stays passive (ADR-015 section 8 (iv)(d), energy note)
 TIME_WINDOW_RECTANGULAR = "rectangular"
 TIME_WINDOW_BARTLETT = "bartlett"
 TIME_WINDOW_SHAPES = (TIME_WINDOW_RECTANGULAR, TIME_WINDOW_BARTLETT)
+#: basis of ``symmetry_tol`` / ``passivity_tol``: absolute SI values (default) or fractions of the
+#: spectral-norm scale of the checked damping / added-mass samples (declared, recorded in the diagnostics)
+TOLERANCE_BASIS_ABSOLUTE = "absolute"
+TOLERANCE_BASIS_RELATIVE = "relative_to_damping_scale"
+TOLERANCE_BASES = (TOLERANCE_BASIS_ABSOLUTE, TOLERANCE_BASIS_RELATIVE)
 
 
 @dataclass(frozen=True)
@@ -278,6 +283,12 @@ class RadiationSettings:
     - ``symmetry_tol`` / ``passivity_tol``: explicit validation tolerances
       used for diagnostics. Violations are reported and preserved, never
       clamped or silently repaired.
+    - ``tolerance_basis``: ``"absolute"`` (default; omitted from serialized
+      settings) takes the two tolerances as SI values; ``"relative_to_damping_scale"``
+      takes them as fractions of the max spectral norm of the checked damping
+      samples (passivity, damping symmetry) or added-mass samples (added-mass
+      symmetry); the scales and effective tolerances are recorded in the
+      diagnostics.
     - ``execution_limits``: optional explicit :class:`RadiationExecutionLimits`
       admitting a longer kernel (up to the hard ceiling). Default ``None``
       keeps the development cap ``MAX_TIME_SAMPLES`` and preserves all old
@@ -310,6 +321,8 @@ class RadiationSettings:
     #: rebuilt at this step over the same horizon, so kernels at different
     #: ``dt`` share one A_inf (time-step refinement of one physical model).
     a_inf_calibration_dt: Optional[float] = None
+    #: ``tolerance_basis``: "absolute" (legacy; omitted when serialised) or "relative_to_damping_scale".
+    tolerance_basis: str = TOLERANCE_BASIS_ABSOLUTE
 
     def __post_init__(self) -> None:
         try:
@@ -352,6 +365,9 @@ class RadiationSettings:
             _require(np.isfinite(tol) and tol >= 0.0,
                      RadiationSettingsError(f"{name} must be finite and >= 0 (explicit tolerance required)"))
             object.__setattr__(self, name, tol)
+
+        _require(isinstance(self.tolerance_basis, str) and self.tolerance_basis in TOLERANCE_BASES,
+                 RadiationSettingsError(f"tolerance_basis must be one of {TOLERANCE_BASES}"))
 
         policy = str(self.low_tail_policy)
         _require(policy in LOW_TAIL_POLICIES,
@@ -521,6 +537,9 @@ class RadiationSettings:
         # The legacy rectangular cut keeps the exact old serialized form and hashes.
         if self.time_window_shape != TIME_WINDOW_RECTANGULAR:
             data["time_window_shape"] = self.time_window_shape
+        # The absolute default keeps the exact old serialized form and hashes.
+        if self.tolerance_basis != TOLERANCE_BASIS_ABSOLUTE:
+            data["tolerance_basis"] = self.tolerance_basis
         if self.a_inf_policy != A_INF_COMPUTED:
             data["a_inf_policy"] = self.a_inf_policy
             data["a_inf_calibration_min"] = float(self.a_inf_calibration_min)
@@ -581,6 +600,7 @@ class RadiationSettings:
                 time_window_shape=data.get("time_window_shape", TIME_WINDOW_RECTANGULAR),
                 a_inf_calibration_max=data.get("a_inf_calibration_max"),
                 a_inf_calibration_dt=data.get("a_inf_calibration_dt"),
+                tolerance_basis=data.get("tolerance_basis", TOLERANCE_BASIS_ABSOLUTE),
             )
         except KeyError as exc:
             raise RadiationSettingsError(
@@ -947,6 +967,14 @@ class RadiationDiagnostics:
     added_mass_symmetry_violations: int
     min_damping_eigenvalue: float
     passivity_violations: int
+    #: Relative tolerance basis only (all None for the absolute basis, which leaves
+    #: ``scalars()`` and the content hash unchanged): the spectral-norm scales and
+    #: the effective (scaled) tolerances the violations were counted against.
+    damping_scale: Optional[float] = None
+    added_mass_scale: Optional[float] = None
+    effective_damping_symmetry_tol: Optional[float] = None
+    effective_added_mass_symmetry_tol: Optional[float] = None
+    effective_passivity_tol: Optional[float] = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "frequency_grid",
@@ -965,8 +993,31 @@ class RadiationDiagnostics:
             value = int(getattr(self, name))
             _require(value >= 0, RadiationError(f"diagnostic {name} must be >= 0"))
             object.__setattr__(self, name, value)
+        relative_names = ("damping_scale", "added_mass_scale", "effective_damping_symmetry_tol",
+                          "effective_added_mass_symmetry_tol", "effective_passivity_tol")
+        given = [getattr(self, name) is not None for name in relative_names]
+        _require(all(given) or not any(given),
+                 RadiationError(f"relative-basis diagnostics {relative_names} must be all given or all None"))
+        if all(given):
+            for name in relative_names:
+                value = float(getattr(self, name))
+                _require(np.isfinite(value) and value >= 0.0,
+                         RadiationError(f"diagnostic {name} must be finite and >= 0"))
+                object.__setattr__(self, name, value)
 
     def scalars(self) -> dict:
+        data = self._absolute_scalars()
+        if self.damping_scale is not None:
+            data.update({
+                "damping_scale": self.damping_scale,
+                "added_mass_scale": self.added_mass_scale,
+                "effective_damping_symmetry_tol": self.effective_damping_symmetry_tol,
+                "effective_added_mass_symmetry_tol": self.effective_added_mass_symmetry_tol,
+                "effective_passivity_tol": self.effective_passivity_tol,
+            })
+        return data
+
+    def _absolute_scalars(self) -> dict:
         return {
             "omega_max": self.omega_max,
             "max_frequency_spacing": self.max_frequency_spacing,
@@ -1456,15 +1507,27 @@ def _kernel_from_arrays(
     iu, ju = np.triu_indices(n_dof, k=1)
     damping_asym_per_pair = asym_damping[:, iu, ju].max(axis=0) if iu.size else np.zeros(0)
     added_asym_per_pair = asym_added[:, iu, ju].max(axis=0) if iu.size else np.zeros(0)
-    damping_sym_violations = int(np.count_nonzero(damping_asym_per_pair > settings.symmetry_tol))
-    added_sym_violations = int(np.count_nonzero(added_asym_per_pair > settings.symmetry_tol))
+    relative_basis = settings.tolerance_basis == TOLERANCE_BASIS_RELATIVE
+    if relative_basis:
+        # declared relative basis: tolerances are fractions of the spectral-norm scale of the
+        # checked samples (raw SI); a zero scale gives a zero tolerance, never a division
+        damping_scale = max((float(np.linalg.norm(m, 2)) for m in b_ext[:omegas.size + 1]), default=0.0)
+        added_mass_scale = max((float(np.linalg.norm(m, 2)) for m in added_mass), default=0.0)
+        damping_sym_tol = settings.symmetry_tol * damping_scale
+        added_sym_tol = settings.symmetry_tol * added_mass_scale
+        passivity_tol = settings.passivity_tol * damping_scale
+    else:
+        damping_sym_tol = added_sym_tol = settings.symmetry_tol
+        passivity_tol = settings.passivity_tol
+    damping_sym_violations = int(np.count_nonzero(damping_asym_per_pair > damping_sym_tol))
+    added_sym_violations = int(np.count_nonzero(added_asym_per_pair > added_sym_tol))
 
     # diagnostics over the source grid plus the declared low tail only (the
     # power-law tail is a positive multiple of B(omega_max))
     b_diag = b_ext[:omegas.size + 1]
     sym_damping = 0.5 * (b_diag + np.transpose(b_diag, (0, 2, 1)))
     min_eigs = np.array([np.linalg.eigvalsh(sym_damping[k]).min() for k in range(sym_damping.shape[0])])
-    passivity_violations = int(np.count_nonzero(min_eigs < -settings.passivity_tol))
+    passivity_violations = int(np.count_nonzero(min_eigs < -passivity_tol))
 
     diagnostics = RadiationDiagnostics(
         frequency_grid=omega_ext[:omegas.size + 1],
@@ -1482,6 +1545,10 @@ def _kernel_from_arrays(
         added_mass_symmetry_violations=added_sym_violations,
         min_damping_eigenvalue=float(np.min(min_eigs)),
         passivity_violations=passivity_violations,
+        **({"damping_scale": damping_scale, "added_mass_scale": added_mass_scale,
+            "effective_damping_symmetry_tol": damping_sym_tol,
+            "effective_added_mass_symmetry_tol": added_sym_tol,
+            "effective_passivity_tol": passivity_tol} if relative_basis else {}),
     )
 
     if settings.high_tail_policy == HIGH_TAIL_POWER_LAW:
