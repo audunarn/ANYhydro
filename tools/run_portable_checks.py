@@ -55,6 +55,7 @@ PORTABLE_TEST_MODULES = (
     "test_imports",
     "test_linux_owned_process",
     "test_mean_drift",
+    "test_orcaflex_export",
     "test_owned_process",
     "test_panel_accuracy_reference",
     "test_panel_integration_candidate",
