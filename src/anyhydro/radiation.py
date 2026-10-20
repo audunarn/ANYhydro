@@ -1428,6 +1428,40 @@ def _reconstruct_added_mass(time, kernel, a_inf, omegas):
     return (a_inf.reshape(n_dof * n_dof)[None, :] - a_int / w[:, None]).reshape(w.size, n_dof, n_dof)
 
 
+def _relative_sample_ratios(samples):
+    """Per-sample relative passivity / asymmetry ratios, safe against overflow.
+
+    ``samples`` is (n_w, n, n) and finite. Each sample ``X`` is divided by ``m = max|X|`` first (entries
+    in [-1, 1], spectral norm <= n, so no intermediate can overflow even when ``norm(X, 2)`` itself would
+    exceed the float range); the ratios are mathematically those of ``X``: the smallest eigenvalue of
+    the symmetric part over the spectral norm of that symmetric part, and ``|X_ij - X_ji|`` over the spectral
+    norm of ``X``. An all-zero sample gives ratio 0 (zero tolerance), never a division. Returns
+    ``(eig_ratio (n_w,), asymmetry_ratio (n_w, n, n))``. Any non-finite norm or ratio raises
+    RadiationError: a violation is never recorded as a silent 0.
+    """
+    samples = np.asarray(samples, dtype=np.float64)
+    eig_ratio = np.zeros(samples.shape[0])
+    asym_ratio = np.zeros(samples.shape)
+    for k, x in enumerate(samples):
+        peak = float(np.max(np.abs(x))) if x.size else 0.0
+        _require(bool(np.isfinite(peak)), RadiationError("non-finite sample in the relative-basis ratios; refusing"))
+        if peak == 0.0:
+            continue
+        xs = x / peak
+        own = float(np.linalg.norm(xs, 2))
+        sym = 0.5 * (xs + xs.T)
+        sym_norm = float(np.linalg.norm(sym, 2))
+        _require(bool(np.isfinite(own) and np.isfinite(sym_norm)),
+                 RadiationError("non-finite sample norm in the relative-basis ratios; refusing"))
+        if own > 0.0:
+            asym_ratio[k] = np.abs(xs - xs.T) / own
+        if sym_norm > 0.0:
+            eig_ratio[k] = float(np.linalg.eigvalsh(sym).min()) / sym_norm
+    _require(bool(np.all(np.isfinite(eig_ratio)) and np.all(np.isfinite(asym_ratio))),
+             RadiationError("non-finite relative-basis ratio; refusing"))
+    return eig_ratio, asym_ratio
+
+
 def _kernel_from_arrays(
     *,
     omegas,
@@ -1549,15 +1583,8 @@ def _kernel_from_arrays(
         # that sample itself (a large sample cannot mask a violation in a smaller one); an own norm of
         # zero gives ratio 0 (zero tolerance), never a division. Violations are decided on the recorded
         # ratios so the counts and the ratios cannot disagree.
-        def _ratios(values, matrices):
-            own = np.array([float(np.linalg.norm(m, 2)) for m in matrices])
-            shape = (-1,) + (1,) * (values.ndim - 1)
-            safe = np.where(own > 0.0, own, 1.0).reshape(shape)
-            return np.where((own > 0.0).reshape(shape), values / safe, 0.0)
-
-        eig_ratio = _ratios(min_eigs, sym_damping)
-        damping_ratio = _ratios(asym_damping, b_diag)
-        added_ratio = _ratios(asym_added, added_mass)
+        eig_ratio, damping_ratio = _relative_sample_ratios(b_diag)
+        added_ratio = _relative_sample_ratios(added_mass)[1]
         damping_ratio_per_pair = damping_ratio[:, iu, ju].max(axis=0) if iu.size else np.zeros(0)
         added_ratio_per_pair = added_ratio[:, iu, ju].max(axis=0) if iu.size else np.zeros(0)
         damping_sym_violations = int(np.count_nonzero(damping_ratio_per_pair > settings.symmetry_tol))

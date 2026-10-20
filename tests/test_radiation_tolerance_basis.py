@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -112,41 +113,53 @@ def test_absolute_default_serialization_and_hash_unchanged():
         assert getattr(k_default.diagnostics, name) is None
 
 
-# --- a2. parent golden: byte-for-byte legacy compatibility ------------------
+# --- a2. legacy compatibility against FROZEN artifacts -----------------------
+# Live kernel quadrature is not bit-stable across environments (docs/PORTABLE_CI.md, "Portable legacy
+# oracle"), so exact golden hashes are checked on the frozen legacy artifacts, never on a live rebuild.
 
-# Produced by the parent commit d7a9d46 (git worktree, PYTHONPATH at its src) from the kernel built in
-# ``test_absolute_matches_parent_golden``; the branch must reproduce them exactly.
-PARENT_GOLDEN_HASH = "1fe67584333f27a797e8303013924d62557e3f4769911dff3c893f8ecff8e3e8"
-PARENT_GOLDEN_SCALARS = {
-    "added_mass_symmetry_violations": 1, "damping_symmetry_violations": 1,
-    "duration_over_spacing_period": 0.15526932436406812, "kernel_duration": 10.0,
-    "max_abs_damping_at_omega_max": 70796.96417941595,
-    "max_added_mass_asymmetry": 4.996021743863821e-06, "max_damping_asymmetry": 5.0000089686363935e-06,
-    "max_frequency_spacing": 0.09755859375000142, "min_damping_eigenvalue": -4.982959944754839e-05,
-    "omega_max": 50.0, "omega_max_times_dt": 0.5, "passivity_violations": 144,
-}
-PARENT_GOLDEN_SETTINGS_SCALARS = {
-    "dt": 0.01, "extension_name": None, "low_tail_policy": "explicit_zero_sample", "n_time": 1001,
-    "passivity_tol": 1e-06, "symmetry_tol": 1e-06, "time_window": None,
-}
+LEGACY_DIR = Path(__file__).parent / "fixtures" / "legacy-compatibility"
+FROZEN_KERNELS = ("full12_kernel_legacy.nc", "long_kernel_default_legacy.nc")
 
 
-def test_absolute_matches_parent_golden(tmp_path):
-    _, _, k = _build(_c_matrix(), symmetry_tol=1.0e-6, passivity_tol=1.0e-6)
-    assert k.diagnostics.scalars() == PARENT_GOLDEN_SCALARS
-    settings_dict = k.settings.to_dict()
-    assert {key: v for key, v in settings_dict.items() if key != "zero_frequency_damping"} \
-        == PARENT_GOLDEN_SETTINGS_SCALARS
-    assert k.content_hash() == PARENT_GOLDEN_HASH
-    # persistence path: the branch-written absolute file carries the parent hash and loads back to it
-    path = tmp_path / "abs.nc"
+@pytest.mark.parametrize("name", FROZEN_KERNELS)
+def test_frozen_legacy_kernels_load_as_absolute_with_golden_hash(name, tmp_path):
+    golden = json.loads((LEGACY_DIR / "provenance.json").read_text(encoding="utf-8"))["golden_hashes"][name]
+    k = rad.load_radiation_kernel(LEGACY_DIR / name)
+    assert k.content_hash() == golden
+    assert k.settings.tolerance_basis == "absolute"
+    assert "tolerance_basis" not in k.settings.to_dict()
+    scalars = k.diagnostics.scalars()
+    for field in RATIOS:
+        assert getattr(k.diagnostics, field) is None
+        assert field not in scalars
+    # the branch-written file keeps the legacy hash and layout
+    path = tmp_path / "again.nc"
     rad.save_radiation_kernel(k, path)
-    loaded = rad.load_radiation_kernel(path)
-    assert loaded.content_hash() == PARENT_GOLDEN_HASH
-    assert loaded.diagnostics.scalars() == PARENT_GOLDEN_SCALARS
+    again = rad.load_radiation_kernel(path)
+    assert again.content_hash() == golden
+    assert again.diagnostics.scalars() == scalars
     attrs = xr.load_dataset(path, engine="scipy").attrs
-    assert json.loads(attrs["diagnostics_scalars"]) == PARENT_GOLDEN_SCALARS
     assert "tolerance_basis" not in json.loads(attrs["settings"])
+    assert not set(RATIOS) & set(json.loads(attrs["diagnostics_scalars"]))
+
+
+def test_absolute_settings_dict_is_the_legacy_dict():
+    """No numerics involved: an absolute settings object serialises exactly as before the basis existed."""
+    s = make_oracle_settings(symmetry_tol=1.0e-6, passivity_tol=1.0e-6)
+    expected = {"dt": 0.01, "extension_name": None, "low_tail_policy": "explicit_zero_sample",
+                "n_time": 1001, "passivity_tol": 1e-06, "symmetry_tol": 1e-06, "time_window": None}
+    d = s.to_dict()
+    assert {key: v for key, v in d.items() if key != "zero_frequency_damping"} == expected
+    assert "tolerance_basis" not in d
+    explicit = make_oracle_settings(symmetry_tol=1.0e-6, passivity_tol=1.0e-6, tolerance_basis="absolute")
+    assert explicit.to_dict() == d
+
+
+def test_explicit_and_implicit_absolute_build_the_same_kernel_in_one_environment():
+    _, _, implicit = _build(_c_matrix(), symmetry_tol=1.0e-6, passivity_tol=1.0e-6)
+    _, _, explicit = _build(_c_matrix(), symmetry_tol=1.0e-6, passivity_tol=1.0e-6, tolerance_basis="absolute")
+    assert implicit.content_hash() == explicit.content_hash()
+    assert implicit.diagnostics.scalars() == explicit.diagnostics.scalars()
 
 
 # --- b. relative basis ----------------------------------------------------
@@ -242,6 +255,58 @@ def test_large_scale_roundoff_is_admitted_with_recorded_ratios():
     assert d.max_damping_asymmetry_ratio == pytest.approx(1.0e-6, rel=1.0e-3)
     assert d.max_added_mass_asymmetry_ratio == pytest.approx(1.0e-6, rel=1.0e-3)
     assert d.min_damping_eigenvalue < 0.0  # reported, not repaired
+
+
+# --- b3. overflowing sample norms must not hide violations -------------------
+
+HUGE = 1.4e308  # finite; the spectral norm of HUGE*[[1,1],[0,1]] (about 2.27e308) overflows to inf
+GOLDEN_RATIO_ASYM = 1.0 / ((1.0 + 5.0 ** 0.5) / 2.0)  # 1 / norm([[1,1],[0,1]], 2) = 0.6180339887...
+
+
+def test_overflowing_added_mass_norm_does_not_hide_symmetry_violation():
+    n_w = ORACLE_OMEGAS.size
+    damping = np.broadcast_to(1.0e2 * np.eye(N_DOF), (n_w, N_DOF, N_DOF)).copy()
+    added = np.broadcast_to(50.0 * np.eye(N_DOF), (n_w, N_DOF, N_DOF)).copy()
+    added[0, :2, :2] = HUGE * np.array([[1.0, 1.0], [0.0, 1.0]])
+    assert np.isinf(np.linalg.norm(added[0], 2))  # the premise: the plain norm overflows
+    k = _kernel_from_samples(added, damping, 1.0e2 * np.eye(N_DOF), tolerance_basis=RELATIVE,
+                             symmetry_tol=1.0e-2, passivity_tol=1.0e-8)
+    d = k.diagnostics
+    assert d.added_mass_symmetry_violations >= 1
+    assert d.max_added_mass_asymmetry_ratio == pytest.approx(GOLDEN_RATIO_ASYM, rel=1.0e-9)
+
+
+def test_overflowing_damping_norm_ratios_are_computed_on_scaled_samples():
+    block = HUGE * np.array([[1.0, 1.0], [0.0, 1.0]])
+    sample = np.zeros((N_DOF, N_DOF))
+    sample[:2, :2] = block
+    assert np.isinf(np.linalg.norm(sample, 2))
+    eig_ratio, asym_ratio = rad._relative_sample_ratios(np.stack([sample, 1.0e2 * np.eye(N_DOF)]))
+    assert asym_ratio[0, 0, 1] == pytest.approx(GOLDEN_RATIO_ASYM, rel=1.0e-9)
+    assert asym_ratio[0, 1, 0] == pytest.approx(GOLDEN_RATIO_ASYM, rel=1.0e-9)
+    assert np.all(np.isfinite(eig_ratio)) and eig_ratio[1] == pytest.approx(1.0)
+    assert np.count_nonzero(asym_ratio[0, 0, 1] > 1.0e-2) == 1
+
+
+def test_scaled_passivity_ratio_is_scale_invariant():
+    base = np.diag(np.linspace(1.0, 0.5, N_DOF))
+    base[-1, -1] = -1.0e-3
+    reference = rad._relative_sample_ratios(base[None])[0][0]
+    assert reference == pytest.approx(-1.0e-3 / 1.0, rel=1.0e-12)
+    for scale in (1.0e-300, 1.0e-8, 1.0e8, 1.0e300, 1.7e308 / 1.0):
+        eig_ratio, asym_ratio = rad._relative_sample_ratios((scale * base)[None])
+        assert eig_ratio[0] == pytest.approx(reference, rel=1.0e-12)
+        assert np.all(asym_ratio == 0.0)
+
+
+def test_non_finite_samples_are_refused_not_recorded_as_zero():
+    bad = np.eye(N_DOF)[None].copy()
+    bad[0, 0, 1] = np.inf
+    with pytest.raises(rad.RadiationError):
+        rad._relative_sample_ratios(bad)
+    bad[0, 0, 1] = np.nan
+    with pytest.raises(rad.RadiationError):
+        rad._relative_sample_ratios(bad)
 
 
 # --- c. persistence -------------------------------------------------------
