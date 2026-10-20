@@ -758,6 +758,11 @@ def _verify_written(o, vt, data: dict) -> None:
             for r in range(vt.GetDataRowCount(block + "Direction")):
                 if float(vt.GetData(column, r)) != 0.0:
                     problems.append(f"zeroed load coefficient table {column}[{r}] reads {vt.GetData(column, r)!r}")
+    # impulse-response integration step must be OrcaFlex's '~' (= the simulation time step); O1c measured 8 % / 6.6 deg
+    # first-order errors with 0.2 s against a 0.05 s simulation step, 2.2 % / 1.8 deg with '~'
+    amd_time_step = float(vt.GetData("AMDTimeStep", -1))
+    if amd_time_step != float(o.OrcinaDefaultReal()):
+        problems.append(f"AMDTimeStep: wrote '~' (the simulation time step), read {amd_time_step!r}")
     infinity = o.OrcinaInfinity()
     for which, spec in _effective_rao_sets(data).items():
         _verify_rao_set(vt, which, spec, infinity, problems)
@@ -820,11 +825,13 @@ def write_vessel_type(model, data: dict, *, name: str):
             vt.SelectedAddedMassAndDampingPeriodOrFrequencyIndex = i
             _set_upper(vt, "AddedMassMatrix", amd["added_mass_infinite"] if i == 0 else amd["added_mass"][i - 1])
             _set_upper(vt, "Damping", np.zeros((6, 6)) if i == 0 else amd["damping"][i - 1])
+        vt.AMDTimeStep = o.OrcinaDefaultReal()                  # '~': the convolution uses the simulation time step
         _verify_written(o, vt, data)
         stored = dict(data["provenance"])
         stored["writer"] = {"OrcFxAPI_DLL_version": o.DLLVersion(), "vessel_type_name": name,
                             "provenance_tag": PROVENANCE_TAG, "hash_tag": HASH_TAG,
-                            "model_density_te_per_m3": density * 1e-3}
+                            "model_density_te_per_m3": density * 1e-3,
+                            "impulse_response": _impulse_response_record(o, vt)}
         vt.tags[PROVENANCE_TAG] = json.dumps(stored, sort_keys=True)
         vt.tags[HASH_TAG] = data["provenance"]["dataset_content_hash"]
     except OrcaFlexExportError:
@@ -834,6 +841,17 @@ def write_vessel_type(model, data: dict, *, name: str):
         _discard(model, vt)
         raise OrcaFlexExportError(f"OrcFxAPI refused the vessel type data: {str(error).strip().splitlines()[-1][:240]}") from error
     return vt
+
+
+def _impulse_response_record(o, vt) -> dict:
+    """The convolution controls as written: the time step is always '~'; the cutoff time and tolerance are OrcaFlex's."""
+    default = float(o.OrcinaDefaultReal())
+
+    def shown(value):
+        return "~" if float(value) == default else float(value)
+    return {"AMDTimeStep": "~ (the simulation time step: implicit constant step or explicit outer step)",
+            "AMDCutoffTime": shown(vt.GetData("AMDCutoffTime", -1)),
+            "AMDCutoffTolerance": shown(vt.GetData("AMDCutoffTolerance", -1))}
 
 
 def _discard(model, vt) -> None:

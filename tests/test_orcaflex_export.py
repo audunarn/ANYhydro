@@ -620,6 +620,9 @@ _ZEROED_SCALARS = ("OtherDampingLinearCoeffx", "OtherDampingLinearCoeffRz", "Oth
                    "WindCoeffYawAreaMoment", "OtherDampingLinearCoeffRx")
 
 
+_ORCINA_DEFAULT_REAL = 1.5000000000000002e+307                # OrcFxAPI.OrcinaDefaultReal ('~')
+
+
 class FakeVesselType:
     """Records what the writer sets and answers what OrcFxAPI would answer; tampering hooks touch the stored state."""
 
@@ -628,7 +631,8 @@ class FakeVesselType:
 
     def __init__(self):
         self.tags = {}
-        self.scalars = {"NumberOfDraughts": 1}
+        self.scalars = {"NumberOfDraughts": 1, "AMDTimeStep": _ORCINA_DEFAULT_REAL, "AMDCutoffTime": _ORCINA_DEFAULT_REAL,
+                        "AMDCutoffTolerance": 2.0}
         for name in _ZEROED_SCALARS:
             self.scalars[name] = _ORCINA_DEFAULT_NONZERO
         self.indexed = {}
@@ -765,6 +769,7 @@ class FakeModel:
 
 class FakeApi:
     ObjectType = type("ObjectType", (), {"VesselType": "VesselType"})
+    OrcinaDefaultReal = staticmethod(lambda: _ORCINA_DEFAULT_REAL)
 
     @staticmethod
     def OrcinaInfinity():
@@ -809,6 +814,24 @@ def test_writer_double_clean_write_passes_and_stores_tags(fake_api, monkeypatch)
     assert all(vt.scalars[k] == 0.0 for k in data["zeroed_load_blocks"]["scalars"])
     for block in ("CurrentCoeff", "WindCoeff"):
         assert all(v == 0.0 for n in _SIX for v in vt.tables[f"{block}{n}"])
+
+
+def test_writer_sets_the_impulse_response_step_to_the_simulation_step_and_records_it(fake_api, monkeypatch):
+    """O1d: the writer sets AMDTimeStep to '~' (OrcaFlex: the simulation time step) even over a non-default value and
+    records the convolution controls in the writer provenance."""
+    model, data, run = _written(monkeypatch)
+    original = FakeModel.CreateObject
+
+    def coarse(self, kind, name):
+        vt = original(self, kind, name)
+        vt.scalars["AMDTimeStep"] = 0.2
+        return vt
+    monkeypatch.setattr(FakeModel, "CreateObject", coarse)
+    vt = run()
+    assert vt.scalars["AMDTimeStep"] == _ORCINA_DEFAULT_REAL
+    record = json.loads(vt.tags[ox.PROVENANCE_TAG])["writer"]["impulse_response"]
+    assert record["AMDTimeStep"].startswith("~")
+    assert record["AMDCutoffTime"] == "~" and record["AMDCutoffTolerance"] == 2.0
 
 
 def test_writer_double_accepts_a_phase_that_differs_by_a_full_turn(fake_api, monkeypatch):
@@ -920,6 +943,10 @@ def _tamper_other_damping(vt):
     vt.scalars["OtherDampingLinearCoeffRx"] = 36.01
 
 
+def _tamper_amd_time_step(vt):                # O1d: a coarse impulse-response step (O1c: 8 % / 6.6 deg) must not pass
+    vt.scalars["AMDTimeStep"] = 0.2
+
+
 def _tamper_scalar(vt):
     vt.scalars["Mass"] = vt.scalars["Mass"] * 1.01
 
@@ -958,6 +985,7 @@ def _tamper_indexed(vt):
     (_tamper_wind_coeff, "zeroed"),
     (_tamper_other_damping, "zeroed"),
     (_tamper_scalar, "Mass"),
+    (_tamper_amd_time_step, "AMDTimeStep"),
     (_tamper_positive_direction, "HeavePositive"),
     (_tamper_indexed, "HydrostaticStiffnessRy"),
 ])
@@ -1099,6 +1127,7 @@ def test_round_trip_through_orcfxapi(orcfx, tmp_path):
     assert stored["dataset_content_hash"] == dataset_content_hash(ds)
     assert {k: v for k, v in stored.items() if k != "writer"} == data["provenance"]
     assert stored["writer"]["OrcFxAPI_DLL_version"] == o.DLLVersion()
+    assert vt.AMDTimeStep == o.OrcinaDefaultReal() and stored["writer"]["impulse_response"]["AMDTimeStep"].startswith("~")
     assert vt.tags[ox.HASH_TAG] == dataset_content_hash(ds)
     path = str(tmp_path / "vessel.dat")
     model.SaveData(path)

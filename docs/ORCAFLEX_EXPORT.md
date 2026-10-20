@@ -98,8 +98,18 @@ sum-frequency QTFs; current, wind and other-damping coefficients (a new vessel t
 the `CurrentCoeff*` and `WindCoeff*` tables and `CurrentYawRateDrag*Factor`, so no default data acts if a user enables the
 effect; the list is recorded in the provenance under `load_coefficient_blocks` and verified in the read-back); all Vessel-object settings (position, heading, motion
 mode: for the load-RAO path use `PrimaryMotion = Calculated (6 DOF)`, `SuperimposedMotion = None`, and
-`IncludeWaveLoad1stOrder`); the impulse-response controls `AMDTimeStep`, `AMDCutoffTime`, `AMDCutoffTolerance` (OrcaFlex
-defaults, to be set and recorded by the O1c study); multibody; non-zero datum heel and trim.
+`IncludeWaveLoad1stOrder`); the impulse-response cutoff `AMDCutoffTime` / `AMDCutoffTolerance` (left at OrcaFlex's values and
+recorded); multibody; non-zero datum heel and trim.
+
+## Impulse-response time step
+
+The writer sets `AMDTimeStep = ~` (OrcaFlex: the convolution integral uses the simulation time step - the implicit
+constant step or the explicit outer step), verifies it in the read-back and records it with the cutoff time and tolerance
+under `writer.impulse_response` in the provenance tag. A coarser step is not a free speed-up: in the O1c study (N4 barge,
+0.05 s simulation step, regular waves 0.6/0.9/1.2 rad/s) `AMDTimeStep = 0.2 s` gave first-order errors up to 8.1 % and
+6.6 deg against the frequency-domain RAO, `~` gave 2.2 % and 1.8 deg; a 600 s instead of 300 s cutoff changed nothing.
+OrcaFlex's own frequency-domain analysis of the exported vessel matched the ANYhydro RAO within 0.13 % and 0.06 deg.
+A user who later sets a coarser `AMDTimeStep` in OrcaFlex takes that error on themselves.
 
 Unused RAO sets (displacement RAOs when none are supplied, the drift QTF when no drift is present) are reset to zero tables
 because a new vessel type is pre-filled with Orcina's default vessel.
