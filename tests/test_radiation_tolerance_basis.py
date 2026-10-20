@@ -263,29 +263,28 @@ HUGE = 1.4e308  # finite; the spectral norm of HUGE*[[1,1],[0,1]] (about 2.27e30
 GOLDEN_RATIO_ASYM = 1.0 / ((1.0 + 5.0 ** 0.5) / 2.0)  # 1 / norm([[1,1],[0,1]], 2) = 0.6180339887...
 
 
-def test_overflowing_added_mass_norm_does_not_hide_symmetry_violation():
+def test_overflowing_added_mass_sample_is_refused_not_recorded_as_zero():
+    """Round 2 found a 0 ratio for an overflowing norm; since round 4 (owner) such samples are refused."""
     n_w = ORACLE_OMEGAS.size
     damping = np.broadcast_to(1.0e2 * np.eye(N_DOF), (n_w, N_DOF, N_DOF)).copy()
     added = np.broadcast_to(50.0 * np.eye(N_DOF), (n_w, N_DOF, N_DOF)).copy()
     added[0, :2, :2] = HUGE * np.array([[1.0, 1.0], [0.0, 1.0]])
     assert np.isinf(np.linalg.norm(added[0], 2))  # the premise: the plain norm overflows
-    k = _kernel_from_samples(added, damping, 1.0e2 * np.eye(N_DOF), tolerance_basis=RELATIVE,
+    with pytest.raises(rad.RadiationError, match="exceeds"):
+        _kernel_from_samples(added, damping, 1.0e2 * np.eye(N_DOF), tolerance_basis=RELATIVE,
                              symmetry_tol=1.0e-2, passivity_tol=1.0e-8)
-    d = k.diagnostics
-    assert d.added_mass_symmetry_violations >= 1
-    assert d.max_added_mass_asymmetry_ratio == pytest.approx(GOLDEN_RATIO_ASYM, rel=1.0e-9)
 
 
-def test_overflowing_damping_norm_ratios_are_computed_on_scaled_samples():
-    block = HUGE * np.array([[1.0, 1.0], [0.0, 1.0]])
+def test_large_but_admitted_samples_keep_exact_asymmetry_ratios():
+    block = 1.0e300 * np.array([[1.0, 1.0], [0.0, 1.0]])
     sample = np.zeros((N_DOF, N_DOF))
     sample[:2, :2] = block
-    assert np.isinf(np.linalg.norm(sample, 2))
     eig_ratio, asym_ratio = rad._relative_sample_ratios(np.stack([sample, 1.0e2 * np.eye(N_DOF)]))
     assert asym_ratio[0, 0, 1] == pytest.approx(GOLDEN_RATIO_ASYM, rel=1.0e-9)
     assert asym_ratio[0, 1, 0] == pytest.approx(GOLDEN_RATIO_ASYM, rel=1.0e-9)
     assert np.all(np.isfinite(eig_ratio)) and eig_ratio[1] == pytest.approx(1.0)
-    assert np.count_nonzero(asym_ratio[0, 0, 1] > 1.0e-2) == 1
+    with pytest.raises(rad.RadiationError, match="exceeds"):
+        rad._relative_sample_ratios((HUGE / 1.0e300 * sample)[None])
 
 
 def test_scaled_passivity_ratio_is_scale_invariant():
@@ -293,10 +292,25 @@ def test_scaled_passivity_ratio_is_scale_invariant():
     base[-1, -1] = -1.0e-3
     reference = rad._relative_sample_ratios(base[None])[0][0]
     assert reference == pytest.approx(-1.0e-3 / 1.0, rel=1.0e-12)
-    for scale in (1.0e-300, 1.0e-8, 1.0e8, 1.0e300, 1.7e308 / 1.0):
+    for scale in (1.0e-300, 1.0e-8, 1.0e8, 1.0e300):
         eig_ratio, asym_ratio = rad._relative_sample_ratios((scale * base)[None])
         assert eig_ratio[0] == pytest.approx(reference, rel=1.0e-12)
         assert np.all(asym_ratio == 0.0)
+    with pytest.raises(rad.RadiationError, match="exceeds"):
+        rad._relative_sample_ratios((1.7e308 * base)[None])
+
+
+def test_subnormal_symmetric_part_next_to_a_huge_skew_pair():
+    """Review round 4: above 1e300 the sample is refused (the halve-first branch erased a subnormal symmetric
+    part); just below it the exact symmetric part keeps the subnormal and the true ratio -1."""
+    tiny = np.nextafter(0.0, 1.0)
+    x = np.zeros((N_DOF, N_DOF))
+    x[:2, :2] = [[-tiny, 1.0e301], [-1.0e301, 0.0]]
+    with pytest.raises(rad.RadiationError, match="exceeds"):
+        rad._relative_sample_ratios(x[None])
+    x[:2, :2] = [[-tiny, 1.0e299], [-1.0e299, 0.0]]
+    eig_ratio, _ = rad._relative_sample_ratios(x[None])
+    assert eig_ratio[0] == pytest.approx(-1.0, rel=1e-12)
 
 
 def test_dominant_skew_part_cannot_hide_a_negative_symmetric_part():

@@ -1428,6 +1428,10 @@ def _reconstruct_added_mass(time, kernel, a_inf, omegas):
     return (a_inf.reshape(n_dof * n_dof)[None, :] - a_int / w[:, None]).reshape(w.size, n_dof, n_dof)
 
 
+#: largest admitted sample entry for the relative tolerance basis (owner decision 2026-10-20, review round 4)
+RELATIVE_BASIS_MAX_ENTRY = 1.0e300
+
+
 def _relative_sample_ratios(samples):
     """Per-sample relative passivity / asymmetry ratios, safe against overflow.
 
@@ -1435,7 +1439,8 @@ def _relative_sample_ratios(samples):
     ``X`` is computed on ``X / max|X|``; the passivity ratio (smallest eigenvalue of the symmetric part over
     the spectral norm of that symmetric part) on the symmetric part formed from ``X`` itself and scaled by
     ITS OWN largest entry, so a dominant skew part cannot underflow a small symmetric part (review round 3).
-    No intermediate overflows (entries in [-1, 1], spectral norms <= n). An all-zero sample gives ratio 0 (zero tolerance), never a division. Returns
+    A sample with an entry above RELATIVE_BASIS_MAX_ENTRY (1e300) is refused (owner decision, review round 4):
+    below it the symmetric part is exact (sum then halve, no overflow) and no intermediate overflows. An all-zero sample gives ratio 0 (zero tolerance), never a division. Returns
     ``(eig_ratio (n_w,), asymmetry_ratio (n_w, n, n))``. Any non-finite norm or ratio raises
     RadiationError: a violation is never recorded as a silent 0.
     """
@@ -1445,13 +1450,16 @@ def _relative_sample_ratios(samples):
     for k, x in enumerate(samples):
         peak = float(np.max(np.abs(x))) if x.size else 0.0
         _require(bool(np.isfinite(peak)), RadiationError("non-finite sample in the relative-basis ratios; refusing"))
+        _require(peak <= RELATIVE_BASIS_MAX_ENTRY,
+                 RadiationError(f"relative tolerance basis: a sample entry {peak:.3e} exceeds "
+                                f"{RELATIVE_BASIS_MAX_ENTRY:g}; refusing (no exact ratio is guaranteed there)"))
         if peak == 0.0:
             continue
         xs = x / peak
         own = float(np.linalg.norm(xs, 2))
-        # symmetric part from the unscaled sample: exact (sum then halve) unless the sum could overflow, where
-        # halving first can only drop subnormal halves; then scaled by its own peak
-        sym = (x + x.T) * 0.5 if peak <= 1.0e300 else 0.5 * x + 0.5 * x.T
+        # symmetric part from the unscaled sample, exact (sum then halve; peak <= 1e300 cannot overflow), then
+        # scaled by its own peak
+        sym = (x + x.T) * 0.5
         sym_peak = float(np.max(np.abs(sym)))
         sym_norm = float(np.linalg.norm(sym / sym_peak, 2)) if sym_peak > 0.0 else 0.0
         _require(bool(np.isfinite(own) and np.isfinite(sym_norm) and np.isfinite(sym_peak)),
