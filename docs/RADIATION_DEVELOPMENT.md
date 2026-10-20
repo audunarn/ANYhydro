@@ -91,12 +91,27 @@ validated neutral dataset (validate_for_time_domain: explicit A_inf + source)
   no blanket scientific default.
 - `tolerance_basis`: `"absolute"` (default; omitted from serialized settings,
   so old hashes are unchanged) takes the two tolerances as SI values.
-  `"relative_to_damping_scale"` takes them as fractions of the max spectral
-  norm of the checked damping samples (passivity, damping symmetry) or of the
-  source-grid added-mass samples (added-mass symmetry). The scales and the
-  effective tolerances are recorded in the diagnostics (`damping_scale`,
-  `added_mass_scale`, `effective_*_tol`; present only for the relative basis).
-  Violations are still counted and reported, never clamped or repaired.
+  `"relative_to_sample_norm"` takes them as fractions of the spectral norm of
+  each checked sample itself, so a large sample cannot mask a violation in a
+  smaller one: a checked damping sample (source grid plus declared low-tail
+  sample) is passivity-violating if the smallest eigenvalue of its symmetric
+  part is below `-passivity_tol` times that part's norm; a DOF pair counts as
+  a damping (added-mass) symmetry violation if at any checked damping
+  (source-grid added-mass) sample `|X_ij - X_ji|` exceeds `symmetry_tol` times
+  the spectral norm of that sample (a zero norm gives a zero tolerance, never
+  a division). The worst per-sample ratios are recorded in the diagnostics
+  (`min_damping_eigenvalue_ratio`, `max_damping_asymmetry_ratio`,
+  `max_added_mass_asymmetry_ratio`; present only for the relative basis).
+  Violations are still counted and reported, never clamped or repaired. The
+  recorded counts are bound to the settings: `RadiationKernel` refuses (on
+  construction and on load) diagnostics whose ratio fields do not match the
+  basis, or whose violation counts contradict the ratios (relative) or the
+  recorded extrema (absolute: `min_damping_eigenvalue`,
+  `max_damping_asymmetry`, `max_added_mass_asymmetry`) against the declared
+  tolerances. `dataclasses.asdict`, pickle and `repr` of the settings and
+  diagnostics now include the new optional fields, while the canonical
+  serialisers (`to_dict`, `scalars`, persistence, content hash) are unchanged
+  for the absolute basis.
 - `execution_limits`: optional frozen public `RadiationExecutionLimits`
   (default `max_time_samples=1001`, minimum 2, hard ceiling 20001).
   Default `None` keeps the development cap and the exact old serialized

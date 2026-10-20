@@ -67,6 +67,7 @@ PORTABLE_TEST_MODULES = (
     "test_radiation_full_block",
     "test_radiation_high_tail",
     "test_radiation_long_kernel",
+    "test_radiation_tolerance_basis",
     "test_radiation_oscillatory",
     "test_radiation_parent_review",
     "test_reciprocity",

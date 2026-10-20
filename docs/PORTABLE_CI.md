@@ -82,6 +82,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_radiation_full_block | band-consistent A_inf, body-diagonal tail and full-block reconstruction criteria |
 | test_radiation_high_tail | declared power-law high-frequency kernel tail |
 | test_radiation_long_kernel | long radiation kernel quadrature |
+| test_radiation_tolerance_basis | absolute vs per-sample relative kernel tolerance basis and its diagnostics binding |
 | test_radiation_oscillatory | oscillatory radiation quadrature |
 | test_radiation_parent_review | radiation parent review contracts |
 | test_reciprocity | pairwise reciprocity diagnostic of radiation matrices (owner decision 2026-10-13) |
