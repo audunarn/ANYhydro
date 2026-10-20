@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -107,3 +109,37 @@ def test_slice_selection_covers_the_allowlist_exactly(tool):
     for index in range(1, total + 1):
         union.extend(tool.select_modules(f"{index}/{total}"))
     assert union == list(tool.PORTABLE_TEST_MODULES)
+
+
+def test_licensed_orcfxapi_is_blocked_in_the_portable_runner(tool):
+    """The runner must never execute licensed OrcFxAPI tests, even on a developer machine that has it installed."""
+    assert "OrcFxAPI" in tool.BLOCKED_OPTIONAL_PACKAGES
+    code = "\n".join([
+        "import importlib.util, importlib.metadata as md",
+        f"spec = importlib.util.spec_from_file_location('run_portable_checks', {str(TOOL_PATH)!r})",
+        "tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)",
+        "tool.install_optional_dependency_blockers()",
+        "try:",
+        "    import OrcFxAPI",
+        "except ModuleNotFoundError:",
+        "    pass",
+        "else:",
+        "    raise SystemExit('OrcFxAPI imported')",
+        "assert importlib.util.find_spec('OrcFxAPI') is None",
+        "for name in ('OrcFxAPI', 'orcfxapi'):",
+        "    try:",
+        "        md.version(name)",
+        "    except md.PackageNotFoundError:",
+        "        pass",
+        "    else:",
+        "        raise SystemExit('distribution visible: ' + name)",
+    ])
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_orcaflex_licensed_tests_skip_through_importorskip():
+    """The licensed tests of the export module reach OrcFxAPI only via importorskip, so the blocker turns them into skips."""
+    path = REPO_ROOT / "tests" / "test_orcaflex_export.py"
+    assert 'pytest.importorskip("OrcFxAPI")' in path.read_text(encoding="utf-8")
+    assert "OrcFxAPI" not in _module_level_import_roots(path)

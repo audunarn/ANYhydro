@@ -30,6 +30,7 @@ RC = np.array([3.0, -2.0, -1.0])               # rotation centre = RAO origin = 
 COB = np.array([0.5, 0.25, -2.0])
 COG = np.array([0.5, 0.25, 0.5])                # same horizontal position as the centre of buoyancy
 LENGTH = 20.0
+SRC = "synthetic test motions"
 DOFS = ("surge", "sway", "heave", "roll", "pitch", "yaw")
 
 
@@ -332,7 +333,7 @@ def test_displacement_raos_optional_input():
     rng = np.random.default_rng(1)
     mot = (rng.normal(size=(5, 8, 6)) + 1j * rng.normal(size=(5, 8, 6))) * np.array([0.5, 0.5, 0.5, 0.02, 0.02, 0.02])
     mot[0, 3, 3] = 0.02 * np.exp(0.5j)                         # roll, rad/m
-    data = export_data(displacement_raos=mot)
+    data = export_data(displacement_raos=mot, motions_source=SRC)
     r = data["rao_sets"]["Displacement RAO"]
     assert tuple(r["origin"]) == tuple(RC) and tuple(r["phase_origin"]) == (0.0, 0.0, 0.0)
     assert r["amplitude"].shape == (8, 5, 6)
@@ -350,14 +351,14 @@ def test_displacement_raos_as_dataarray_must_match_the_grid():
     mot = np.ones((5, 8, 6), dtype=complex)
     good = xr.DataArray(mot, dims=("omega", "wave_direction", "radiating_dof"),
                         coords={"omega": OMEGA, "wave_direction": HEADINGS, "radiating_dof": keys})
-    assert export_data(ds, displacement_raos=good)["rao_sets"]["Displacement RAO"] is not None
+    assert export_data(ds, displacement_raos=good, motions_source=SRC)["rao_sets"]["Displacement RAO"] is not None
     bad = good.assign_coords(omega=OMEGA * (1 + 1e-9))
     with pytest.raises(ox.OrcaFlexExportError, match="omega"):
-        export_data(ds, displacement_raos=bad)
+        export_data(ds, displacement_raos=bad, motions_source=SRC)
     with pytest.raises(ox.OrcaFlexExportError, match="shape"):
-        export_data(ds, displacement_raos=np.ones((5, 7, 6), dtype=complex))
+        export_data(ds, displacement_raos=np.ones((5, 7, 6), dtype=complex), motions_source=SRC)
     with pytest.raises(ox.OrcaFlexExportError, match="finite"):
-        export_data(ds, displacement_raos=np.full((5, 8, 6), np.nan, dtype=complex))
+        export_data(ds, displacement_raos=np.full((5, 8, 6), np.nan, dtype=complex), motions_source=SRC)
 
 
 def test_provenance_record():
@@ -502,6 +503,446 @@ def test_refuses_a_single_heading_and_conflicting_duplicates():
         export_data(make_dataset(headings=np.array([0.0, np.pi / 2, 2.0 * np.pi]), X=arrays["X"]))
 
 
+# ------------------------------------------------------------------------------------------------ review round 1 (pure)
+def test_displacement_raos_need_a_declared_source():
+    mot = np.ones((5, 8, 6), dtype=complex)
+    ds = make_dataset()
+    with pytest.raises(ox.OrcaFlexExportError, match="motions_source"):
+        ox.vessel_type_data(ds, mass_props(), length_scale=LENGTH, gravity=G, displacement_raos=mot)
+    for bad in ("", "   ", 3):
+        with pytest.raises(ox.OrcaFlexExportError, match="motions_source"):
+            export_data(ds, displacement_raos=mot, motions_source=bad)
+    with pytest.raises(ox.OrcaFlexExportError, match="motions_source"):
+        export_data(ds, motions_source=SRC)                       # a source without motions is a contradiction
+
+
+def test_provenance_identity_includes_the_displacement_raos():
+    rng = np.random.default_rng(7)
+    U = (rng.normal(size=(5, 8, 6)) + 1j * rng.normal(size=(5, 8, 6))) * 0.1
+    ds = make_dataset()
+    p1 = export_data(ds, displacement_raos=U, motions_source=SRC)["provenance"]
+    p1b = export_data(ds, displacement_raos=U.copy(), motions_source=SRC)["provenance"]
+    p2 = export_data(ds, displacement_raos=2.0 * U, motions_source=SRC)["provenance"]
+    p3 = export_data(ds, displacement_raos=U, motions_source="another source")["provenance"]
+    assert json.dumps(p1, sort_keys=True) == json.dumps(p1b, sort_keys=True)
+    assert p1["displacement_raos"]["motion_hash"] != p2["displacement_raos"]["motion_hash"]
+    assert p1 != p2 and p1 != p3
+    assert p1["displacement_raos"]["source"] == SRC
+    assert len(p1["displacement_raos"]["motion_hash"]) == 64
+    assert p1["dataset_content_hash"] == p2["dataset_content_hash"]          # only the motions differ
+    conj = U.conj()                                                           # the imaginary part is part of the identity
+    assert export_data(ds, displacement_raos=conj, motions_source=SRC)["provenance"] != p1
+    assert export_data(ds, displacement_raos=np.asfortranarray(U), motions_source=SRC)["provenance"] == p1
+
+
+def test_displacement_raos_dataarray_and_array_with_the_same_values_have_one_hash():
+    import xarray as xr
+    ds = make_dataset()
+    U = np.random.default_rng(3).normal(size=(5, 8, 6)) * (1 + 0j)
+    da = xr.DataArray(U, dims=("omega", "wave_direction", "radiating_dof"),
+                      coords={"omega": OMEGA, "wave_direction": HEADINGS, "radiating_dof": [f"{BODY}::{d}" for d in DOFS]})
+    assert (export_data(ds, displacement_raos=da, motions_source=SRC)["provenance"]
+            == export_data(ds, displacement_raos=U, motions_source=SRC)["provenance"])
+
+
+def test_unused_load_coefficient_blocks_are_zeroed_and_recorded():
+    data = export_data()
+    z = data["zeroed_load_blocks"]
+    assert set(z["scalars"]) >= {"OtherDampingLinearCoeffx", "OtherDampingLinearCoeffRz", "OtherDampingQuadraticCoeffx",
+                                 "OtherDampingQuadraticCoeffRz", "CurrentCoeffSurgeArea", "CurrentCoeffRollAreaMoment",
+                                 "CurrentYawRateDragYawFactor", "WindCoeffSurgeArea", "WindCoeffYawAreaMoment"}
+    assert all(value == 0.0 for value in z["scalars"].values())
+    assert set(z["tables"]) == {"CurrentCoeff", "WindCoeff"}
+    assert z["tables"]["CurrentCoeff"] == ["CurrentCoeffSurge", "CurrentCoeffSway", "CurrentCoeffHeave", "CurrentCoeffRoll",
+                                           "CurrentCoeffPitch", "CurrentCoeffYaw"]
+    p = data["provenance"]
+    assert "zeroed, not exported" in json.dumps(p["load_coefficient_blocks"])
+    assert set(p["load_coefficient_blocks"]["zeroed_scalars"]) == set(z["scalars"])
+
+
+@pytest.mark.parametrize("bad", ["{not json", "[1, 2]", "42"])
+def test_malformed_wave_environment_is_refused_not_ignored(bad):
+    ds = make_dataset(with_drift=True)
+    ds.attrs["wave_environment"] = bad
+    with pytest.raises(ox.OrcaFlexExportError, match="wave_environment"):
+        export_data(ds)
+
+
+def test_wave_environment_of_the_wrong_type_or_content_is_refused():
+    ds = make_dataset(with_drift=True)
+    ds.attrs["wave_environment"] = 3.5
+    with pytest.raises(ox.OrcaFlexExportError, match="wave_environment"):
+        export_data(ds)
+    ds = make_dataset(with_drift=True)
+    ds.attrs["wave_environment"] = json.dumps({"water_depth": "inf", "rho": "heavy", "g": G})
+    with pytest.raises(ox.OrcaFlexExportError, match="not a valid ANYhydro dataset"):
+        export_data(ds)
+
+
+def test_the_six_positive_direction_settings_are_in_the_data():
+    s = export_data()["scalars"]
+    assert {k: s[k] for k in ("SurgePositive", "SwayPositive", "HeavePositive", "RollPositiveStarboard", "PitchPositiveBow",
+                              "YawPositiveBow")} == {
+        "SurgePositive": "forward", "SwayPositive": "port", "HeavePositive": "up", "RollPositiveStarboard": "down",
+        "PitchPositiveBow": "down", "YawPositiveBow": "port"}
+
+
+# ---------------------------------------------------------------------------------- pure writer double (no licence)
+INF = 1.0e30
+_SIX = ("Surge", "Sway", "Heave", "Roll", "Pitch", "Yaw")
+_RAO_COLUMN_NAMES = frozenset(f"RAO{n}{k}" for n in ("Surge", "Sway", "Heave", "Roll", "Pitch", "Yaw") for k in ("Amp", "Phase"))
+_ORCINA_DEFAULT_NONZERO = 0.7                       # the pre-filled default vessel is not zero
+_ZEROED_SCALARS = ("OtherDampingLinearCoeffx", "OtherDampingLinearCoeffRz", "OtherDampingQuadraticCoeffy",
+                   "OtherDampingQuadraticCoeffRx", "CurrentCoeffSurgeArea", "CurrentCoeffRollAreaMoment",
+                   "CurrentYawRateDragSurgeFactor", "CurrentYawRateDragYawFactor", "WindCoeffSwayArea",
+                   "WindCoeffYawAreaMoment", "OtherDampingLinearCoeffRx")
+
+
+class FakeVesselType:
+    """Records what the writer sets and answers what OrcFxAPI would answer; tampering hooks touch the stored state."""
+
+    _STATE = ("tags", "scalars", "indexed", "sets", "tables", "amd_periods", "amd", "_sel_set", "_sel_dir", "_sel_amd", "Name")
+    _RAO_ATTRS = ("RAOOriginX", "RAOOriginY", "RAOOriginZ", "RAOPhaseOriginX", "RAOPhaseOriginY", "RAOPhaseOriginZ")
+
+    def __init__(self):
+        self.tags = {}
+        self.scalars = {"NumberOfDraughts": 1}
+        for name in _ZEROED_SCALARS:
+            self.scalars[name] = _ORCINA_DEFAULT_NONZERO
+        self.indexed = {}
+        self.sets = {}
+        for which in ("Wave load RAO", "Displacement RAO", "Wave drift QTF"):
+            row = {"freq": 3.0, "cols": {f"RAO{n}{k}": _ORCINA_DEFAULT_NONZERO for n in _SIX for k in ("Amp", "Phase")}}
+            self.sets[which] = {"origin": [9.0, 9.0, 9.0], "phase_origin": [8.0, 8.0, 8.0],
+                                "dirs": [{"dir": 0.0, "rows": [row]}]}
+        self.tables = {}
+        for block in ("CurrentCoeff", "WindCoeff"):
+            for n in _SIX:
+                self.tables[f"{block}{n}"] = [_ORCINA_DEFAULT_NONZERO] * 7
+        self.amd_periods = []
+        self.amd = []
+        self._sel_set = "Wave load RAO"
+        self._sel_dir = 0
+        self._sel_amd = 0
+        self.Name = "?"
+
+    def __setattr__(self, name, value):
+        if name in self._STATE:
+            object.__setattr__(self, name, value)
+        elif name == "SelectedRAOs":
+            object.__setattr__(self, "_sel_set", value)
+            object.__setattr__(self, "_sel_dir", 0)
+        elif name == "SelectedRAODirectionIndex":
+            object.__setattr__(self, "_sel_dir", int(value))
+        elif name == "NumberOfRAODirections":
+            dirs = self.sets[self._sel_set]["dirs"]
+            while len(dirs) < value:
+                dirs.append({"dir": 0.0, "rows": []})
+            del dirs[value:]
+        elif name == "RAODirection":
+            self.sets[self._sel_set]["dirs"][self._sel_dir]["dir"] = float(value)
+        elif name in self._RAO_ATTRS:
+            key = "phase_origin" if "Phase" in name else "origin"
+            self.sets[self._sel_set][key]["XYZ".index(name[-1])] = float(value)
+        elif name == "NumberOfAddedMassAndDampingPeriodsOrFrequencies":
+            self.amd_periods = [0.0] * int(value)
+            self.amd = [{} for _ in range(int(value))]
+        elif name == "SelectedAddedMassAndDampingPeriodOrFrequencyIndex":
+            object.__setattr__(self, "_sel_amd", int(value))
+        else:
+            self.scalars[name] = value
+
+    def __getattr__(self, name):
+        if name in self._RAO_ATTRS:
+            key = "phase_origin" if "Phase" in name else "origin"
+            return self.sets[self._sel_set][key]["XYZ".index(name[-1])]
+        if name == "NumberOfRAODirections":
+            return len(self.sets[self._sel_set]["dirs"])
+        if name == "RAODirection":
+            return self.sets[self._sel_set]["dirs"][self._sel_dir]["dir"]
+        if name == "NumberOfAddedMassAndDampingPeriodsOrFrequencies":
+            return len(self.amd_periods)
+        try:
+            return self.__dict__["scalars"][name]
+        except KeyError:
+            raise AttributeError(name) from None
+
+    def _rows(self):
+        return self.sets[self._sel_set]["dirs"][self._sel_dir]["rows"]
+
+    def SetDataRowCount(self, name, count):
+        assert name == "RAOPeriodOrFrequency"
+        rows = self._rows()
+        while len(rows) < count:
+            rows.append({"freq": 0.0, "cols": {f"RAO{n}{k}": 0.0 for n in _SIX for k in ("Amp", "Phase")}})
+        del rows[count:]
+
+    def GetDataRowCount(self, name):
+        if name == "RAOPeriodOrFrequency":
+            return len(self._rows())
+        return len(self.tables[name.replace("Direction", "Surge")])
+
+    def SetData(self, name, index, value):
+        if name == "RAOPeriodOrFrequency":
+            self._rows()[index]["freq"] = value
+        elif name in _RAO_COLUMN_NAMES:
+            self._rows()[index]["cols"][name] = value
+        elif name == "AMDPeriodOrFrequency":
+            self.amd_periods[index] = value
+        elif name.startswith(("AddedMassMatrix", "Damping")):
+            prefix = "AddedMassMatrix" if name.startswith("AddedMass") else "Damping"
+            column = ("X", "Y", "Z", "Rx", "Ry", "Rz").index(name[len(prefix):])
+            table = self.amd[self._sel_amd]
+            table.setdefault(name, [0.0] * 6)[index] = value
+            table.setdefault(prefix + ("X", "Y", "Z", "Rx", "Ry", "Rz")[index], [0.0] * 6)[column] = value   # symmetric
+        elif name in self.tables:
+            self.tables[name][index] = value
+        elif index == -1:
+            self.scalars[name] = value
+        else:
+            self.indexed[(name, index)] = value
+
+    def GetData(self, name, index):
+        if name == "DraughtName":
+            return "Draught1"
+        if name == "RAOPeriodOrFrequency":
+            return self._rows()[index]["freq"]
+        if name in _RAO_COLUMN_NAMES:
+            return self._rows()[index]["cols"][name]
+        if name == "AMDPeriodOrFrequency":
+            return self.amd_periods[index]
+        if name.startswith(("AddedMassMatrix", "Damping")):
+            return self.amd[self._sel_amd].get(name, [0.0] * 6)[index]
+        if name in self.tables:
+            return self.tables[name][index]
+        if index == -1:
+            return self.scalars[name]
+        return self.indexed[(name, index)]
+
+
+class FakeModel:
+    def __init__(self, rho=RHO):
+        self.general = type("General", (), {"UnitsSystem": "SI"})()
+        self.environment = type("Environment", (), {"Density": rho / 1000.0})()
+        self.objects = {}
+        self.destroyed = []
+
+    def __getitem__(self, name):
+        return self.objects[name]
+
+    def CreateObject(self, kind, name):
+        vt = FakeVesselType()
+        vt.Name = name
+        self.objects[name] = vt
+        return vt
+
+    def DestroyObject(self, vt):
+        self.destroyed.append(vt)
+        self.objects.pop(vt.Name, None)
+
+
+class FakeApi:
+    ObjectType = type("ObjectType", (), {"VesselType": "VesselType"})
+
+    @staticmethod
+    def OrcinaInfinity():
+        return INF
+
+    @staticmethod
+    def DLLVersion():
+        return "fake"
+
+
+@pytest.fixture()
+def fake_api(monkeypatch):
+    monkeypatch.setattr(ox, "_orcfxapi", lambda: FakeApi)
+    return FakeApi
+
+
+def _written(monkeypatch, tamper=None, **kw):
+    """Prepare a write through the double; ``tamper(vt)`` corrupts the stored state between writing and the read-back."""
+    data = export_data(make_dataset(with_drift=True), **kw)
+    model = FakeModel()
+    if tamper is not None:
+        original = ox._verify_written
+
+        def wrapped(o, vt, d):
+            tamper(vt)
+            return original(o, vt, d)
+        monkeypatch.setattr(ox, "_verify_written", wrapped)
+    return model, data, lambda: ox.write_vessel_type(model, data, name="V")
+
+
+def test_writer_double_clean_write_passes_and_stores_tags(fake_api, monkeypatch):
+    model, data, run = _written(monkeypatch)
+    vt = run()
+    assert vt.tags[ox.HASH_TAG] == data["provenance"]["dataset_content_hash"]
+    stored = json.loads(vt.tags[ox.PROVENANCE_TAG])
+    assert {k: v for k, v in stored.items() if k != "writer"} == data["provenance"]
+    assert model.destroyed == []
+    for name in ("SurgePositive", "SwayPositive", "HeavePositive", "RollPositiveStarboard", "PitchPositiveBow",
+                 "YawPositiveBow"):
+        assert vt.scalars[name] == data["scalars"][name]            # the writer really sets all six
+    assert vt.scalars["YawPositiveBow"] == "port" and vt.scalars["HeavePositive"] == "up"
+    assert all(vt.scalars[k] == 0.0 for k in data["zeroed_load_blocks"]["scalars"])
+    for block in ("CurrentCoeff", "WindCoeff"):
+        assert all(v == 0.0 for n in _SIX for v in vt.tables[f"{block}{n}"])
+
+
+def test_writer_double_accepts_a_phase_that_differs_by_a_full_turn(fake_api, monkeypatch):
+    def bump(vt):
+        vt.sets["Wave load RAO"]["dirs"][0]["rows"][0]["cols"]["RAORollPhase"] += 360.0
+    _, _, run = _written(monkeypatch, bump)
+    run()                                                           # a unit-phasor comparison, not a degree comparison
+
+
+def _row(vt, which="Wave load RAO", d=0, r=0):
+    return vt.sets[which]["dirs"][d]["rows"][r]
+
+
+def _tamper_phase(vt):
+    _row(vt)["cols"]["RAOHeavePhase"] += 90.0
+
+
+def _tamper_origin(vt):
+    vt.sets["Wave load RAO"]["origin"][2] += 0.5
+
+
+def _tamper_drift_origin(vt):
+    vt.sets["Wave drift QTF"]["origin"][0] += 0.5
+
+
+def _tamper_phase_origin(vt):
+    vt.sets["Wave load RAO"]["phase_origin"][0] += 1.0
+
+
+def _tamper_amplitude(vt):
+    _row(vt)["cols"]["RAOSwayAmp"] *= 1.001
+
+
+def _tamper_a_row(vt):
+    vt.amd[2]["AddedMassMatrixZ"][2] *= 1.01
+
+
+def _tamper_b_row(vt):
+    vt.amd[3]["DampingRx"][3] *= 0.99
+
+
+def _tamper_ainf_row(vt):
+    vt.amd[vt.amd_periods.index(INF)]["AddedMassMatrixRy"][4] += 1.0
+
+
+def _tamper_inf_damping(vt):
+    vt.amd[vt.amd_periods.index(INF)]["DampingX"][0] = 5.0
+
+
+def _tamper_extra_amd_frequency(vt):
+    vt.amd_periods.append(0.123)
+    vt.amd.append({})
+
+
+def _tamper_missing_amd_frequency(vt):
+    del vt.amd_periods[2]
+    del vt.amd[2]
+
+
+def _tamper_extra_rao_frequency(vt):
+    vt.sets["Wave load RAO"]["dirs"][1]["rows"].append({"freq": 0.42, "cols": dict(_row(vt)["cols"])})
+
+
+def _tamper_missing_rao_frequency(vt):
+    del vt.sets["Wave load RAO"]["dirs"][1]["rows"][2]
+
+
+def _tamper_extra_direction(vt):
+    vt.sets["Wave load RAO"]["dirs"].append({"dir": 7.0, "rows": list(vt.sets["Wave load RAO"]["dirs"][0]["rows"])})
+
+
+def _tamper_missing_direction(vt):
+    del vt.sets["Wave load RAO"]["dirs"][3]
+
+
+def _tamper_unused_set_not_zero(vt):
+    _row(vt, "Displacement RAO")["cols"]["RAOHeaveAmp"] = 0.01
+
+
+def _tamper_unused_set_extra_frequency(vt):
+    vt.sets["Displacement RAO"]["dirs"][0]["rows"].append({"freq": 2.0, "cols": dict(_row(vt)["cols"])})
+
+
+def _tamper_unused_set_origin(vt):
+    vt.sets["Displacement RAO"]["origin"][0] += 1.0
+
+
+def _tamper_current_coeff(vt):
+    vt.tables["CurrentCoeffYaw"][3] = 0.06
+
+
+def _tamper_wind_coeff(vt):
+    vt.tables["WindCoeffSurge"][0] = 0.8
+
+
+def _tamper_other_damping(vt):
+    vt.scalars["OtherDampingLinearCoeffRx"] = 36.01
+
+
+def _tamper_scalar(vt):
+    vt.scalars["Mass"] = vt.scalars["Mass"] * 1.01
+
+
+def _tamper_positive_direction(vt):
+    vt.scalars["HeavePositive"] = "down"
+
+
+def _tamper_indexed(vt):
+    vt.indexed[("HydrostaticStiffnessRy", 2)] *= 1.01
+
+
+@pytest.mark.parametrize("tamper,needle", [
+    (_tamper_phase, "phase"),
+    (_tamper_origin, "origin"),
+    (_tamper_drift_origin, "origin"),
+    (_tamper_phase_origin, "phase origin"),
+    (_tamper_amplitude, "amplitude"),
+    (_tamper_a_row, "added mass"),
+    (_tamper_b_row, "damping"),
+    (_tamper_ainf_row, "added mass"),
+    (_tamper_inf_damping, "damping"),
+    (_tamper_extra_amd_frequency, "frequencies"),
+    (_tamper_missing_amd_frequency, "frequencies"),
+    (_tamper_extra_rao_frequency, "frequencies"),
+    (_tamper_missing_rao_frequency, "frequencies"),
+    (_tamper_extra_direction, "directions"),
+    (_tamper_missing_direction, "directions"),
+    (_tamper_unused_set_not_zero, "amplitude"),
+    (_tamper_unused_set_extra_frequency, "frequencies"),
+    (_tamper_unused_set_origin, "origin"),
+    (_tamper_current_coeff, "zeroed"),
+    (_tamper_wind_coeff, "zeroed"),
+    (_tamper_other_damping, "zeroed"),
+    (_tamper_scalar, "Mass"),
+    (_tamper_positive_direction, "HeavePositive"),
+    (_tamper_indexed, "HydrostaticStiffnessRy"),
+])
+def test_read_back_refuses_every_corrupted_category_and_destroys_the_object(fake_api, monkeypatch, tamper, needle):
+    model, _, run = _written(monkeypatch, tamper)
+    with pytest.raises(ox.OrcaFlexExportError, match=needle) as info:
+        run()
+    assert "read-back" in str(info.value)
+    assert len(model.destroyed) == 1 and "V" not in model.objects
+
+
+def test_read_back_checks_a_supplied_displacement_set_too(fake_api, monkeypatch):
+    mot = (np.random.default_rng(5).normal(size=(5, 8, 6)) + 0j) * 0.1
+
+    def tamper(vt):
+        _row(vt, "Displacement RAO", 2, 1)["cols"]["RAOPitchPhase"] += 30.0
+    model, _, run = _written(monkeypatch, tamper, displacement_raos=mot, motions_source=SRC)
+    with pytest.raises(ox.OrcaFlexExportError, match="phase"):
+        run()
+    assert len(model.destroyed) == 1
+
+
 # ------------------------------------------------------------------------------------------------ OrcFxAPI
 @pytest.fixture()
 def orcfx():
@@ -575,6 +1016,11 @@ def _check_vessel_type(o, vt, data):
     for name, rows in data["indexed"].items():
         for i, value in enumerate(rows):
             assert vt.GetData(name, i) == pytest.approx(value, rel=1e-12, abs=1e-12), (name, i)
+    for name in data["zeroed_load_blocks"]["scalars"]:                     # Orcina's default tanker data must not survive
+        assert vt.GetData(name, -1) == 0.0, name
+    for block, names in data["zeroed_load_blocks"]["tables"].items():
+        for column in names:
+            assert all(vt.GetData(column, r) == 0.0 for r in range(vt.GetDataRowCount(block + "Direction"))), column
     for which in ("Wave load RAO", "Displacement RAO", "Wave drift QTF"):
         spec = data["rao_sets"][which]
         if spec is None:
@@ -607,8 +1053,9 @@ def test_round_trip_through_orcfxapi(orcfx, tmp_path):
     arrays = default_arrays()
     mot = (arrays["X"] * 1e-6).astype(complex)
     model = _new_model(o)
-    vt = ox.export_vessel_type(model, ds, mass_props(), name="Barge", length_scale=LENGTH, gravity=G, displacement_raos=mot)
-    data = export_data(ds, displacement_raos=mot)
+    vt = ox.export_vessel_type(model, ds, mass_props(), name="Barge", length_scale=LENGTH, gravity=G, displacement_raos=mot,
+                               motions_source=SRC)
+    data = export_data(ds, displacement_raos=mot, motions_source=SRC)
     assert vt.Name == "Barge"
     _check_vessel_type(o, vt, data)
     stored = _stored_provenance(vt)

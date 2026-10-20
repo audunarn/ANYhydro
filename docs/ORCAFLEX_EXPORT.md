@@ -15,13 +15,14 @@ from anyhydro import orcaflex_export as ox
 
 props = ox.DeclaredMassProperties(mass=..., centre_of_gravity=(x, y, z), inertia=[[...], [...], [...]])  # kg, m, kg m^2
 data = ox.vessel_type_data(dataset, props, length_scale=L, gravity=9.81,
-                           displacement_raos=None, include_mean_drift=True)       # pure, no OrcFxAPI
+                           displacement_raos=None, motions_source=None,
+                           include_mean_drift=True)                               # pure, no OrcFxAPI
 vt = ox.export_vessel_type(model, dataset, props, name="Barge", length_scale=L, gravity=9.81)   # OrcFxAPI writer
 ```
 
 - `vessel_type_data` validates, composes, symmetrises, converts and returns plain data (scalars, indexed items, RAO and
-  added-mass tables, a provenance record). `write_vessel_type(model, data, name=...)` sets exactly those items and reads
-  them back; `export_vessel_type` is the two combined.
+  added-mass tables, the zeroed load-coefficient blocks, a provenance record). `write_vessel_type(model, data, name=...)`
+  sets exactly those items and reads them back (see Read-back); `export_vessel_type` is the two combined.
 - Errors are `OrcaFlexExportError` (a `HydroError`). Nothing is converted silently.
 - The provenance JSON (dataset content hash, conventions, unit factors, declared inputs, skew ratios, headings, warnings,
   writer and OrcFxAPI version) is stored in the vessel type's tag `anyhydro_provenance`; the dataset content hash is also
@@ -85,17 +86,37 @@ missing `added_mass_infinite`; missing, UNKNOWN or non-`BUOYANCY_ONLY` hydrostat
 inconsistent or not equal to the declared g; mass imbalance beyond 1e-3; weight/buoyancy not in equilibrium; inconsistent
 centre of buoyancy; skew above the bound; non-diagonal inertia (products of inertia: the OrcaFlex sign convention is not
 probed); fewer than two distinct headings; equal headings with different data; displacement RAOs of the wrong shape, grid
-or with non-finite values; non-SI model; model density different from the dataset's; an existing object name.
+or with non-finite values; displacement RAOs without a `motions_source` (or a source without motions); a present but
+undecodable `wave_environment` attribute (it is never treated as absent); non-SI model; model density different from the dataset's; an existing object name.
 Heading gaps above 45 degrees and the RAO frequency band are recorded as warnings (OrcaFlex warns and extrapolates).
 
 ## Not exported
 
 Surge, sway and yaw hydrostatic stiffness (moorings and horizontal restoring belong in the OrcaFlex model); full QTFs and
-sum-frequency QTFs; current, wind and other-damping coefficients (a new vessel type holds Orcina's defaults there; they act
-only if the Vessel object includes them, which defaults to No); all Vessel-object settings (position, heading, motion
+sum-frequency QTFs; current, wind and other-damping coefficients (a new vessel type holds Orcina's default tanker there; these blocks are
+**zeroed, not exported**: `OtherDampingLinearCoeff*`, `OtherDampingQuadraticCoeff*`, `CurrentCoeff*Area/AreaMoment`,
+the `CurrentCoeff*` and `WindCoeff*` tables and `CurrentYawRateDrag*Factor`, so no default data acts if a user enables the
+effect; the list is recorded in the provenance under `load_coefficient_blocks` and verified in the read-back); all Vessel-object settings (position, heading, motion
 mode: for the load-RAO path use `PrimaryMotion = Calculated (6 DOF)`, `SuperimposedMotion = None`, and
 `IncludeWaveLoad1stOrder`); the impulse-response controls `AMDTimeStep`, `AMDCutoffTime`, `AMDCutoffTolerance` (OrcaFlex
 defaults, to be set and recorded by the O1c study); multibody; non-zero datum heel and trim.
 
 Unused RAO sets (displacement RAOs when none are supplied, the drift QTF when no drift is present) are reset to zero tables
 because a new vessel type is pre-filled with Orcina's default vessel.
+
+## Displacement RAO provenance
+
+`displacement_raos` needs a declared `motions_source` (non-empty text). The provenance records the source, the DOF keys and
+a SHA-256 of the canonical motion array (complex128, little-endian, C order, `-0.0` normalised) together with its omega and
+wave-direction coordinates and shape (the pattern of `anyhydro.mean_drift`), so exports of different motions never share a
+provenance or tag identity.
+
+## Read-back
+
+After writing, `_verify_written` reads back and compares everything written: all scalars and indexed items; the zeroed
+load blocks; every RAO set (response origin, phase origin, the exact set of directions and frequencies per direction,
+amplitudes and phases, phases compared as unit phasors where the amplitude is non-zero, the infinite-frequency row); unused
+sets must read as the zero tables; every added-mass and damping row including the infinite-frequency row. Tables are
+matched by value because OrcaFlex re-sorts them; extra or missing directions or frequencies are mismatches. A mismatch
+raises `OrcaFlexExportError` and destroys the half-written object. The verifier is covered without a licence by pure
+writer-double tests that corrupt each category; the OrcFxAPI tests additionally prove the physical moment transfer.

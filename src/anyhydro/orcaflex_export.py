@@ -16,6 +16,7 @@ displaced mass, a skew part above the declared bound or a non-diagonal inertia i
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -73,6 +74,17 @@ _MATRIX_COLUMNS = ("X", "Y", "Z", "Rx", "Ry", "Rz")
 _DRIFT_DOFS = ("surge", "sway", "yaw")
 _HRP = (2, 3, 4)                          # heave, roll, pitch: the only stiffness OrcaFlex's displacement method takes
 _RAO_SETS = ("Wave load RAO", "Displacement RAO", "Wave drift QTF")
+_DOF_WORDS = ("Surge", "Sway", "Heave", "Roll", "Pitch", "Yaw")
+
+#: A new vessel type holds Orcina's default tanker. These pre-filled load-coefficient blocks are not part of the
+#: exported data, so they are set to zero (they act only if the Vessel object enables the effect) and read back.
+ZEROED_LOAD_SCALARS = tuple(
+    [f"OtherDamping{kind}Coeff{axis}" for kind in ("Linear", "Quadratic") for axis in ("x", "y", "z", "Rx", "Ry", "Rz")]
+    + [f"{block}Coeff{word}Area" for block in ("Current", "Wind") for word in ("Surge", "Sway", "Heave")]
+    + [f"{block}Coeff{word}AreaMoment" for block in ("Current", "Wind") for word in ("Roll", "Pitch", "Yaw")]
+    + [f"CurrentYawRateDrag{word}Factor" for word in ("Surge", "Sway", "Yaw")])
+#: coefficient tables: the direction column stays, every coefficient column is zeroed in every row
+ZEROED_LOAD_TABLES = {block: [f"{block}{word}" for word in _DOF_WORDS] for block in ("CurrentCoeff", "WindCoeff")}
 
 
 class OrcaFlexExportError(HydroError):
@@ -135,13 +147,18 @@ class DeclaredMassProperties:
 
 # ---------------------------------------------------------------------------------------------------- pure layer
 def _json_attr(dataset, name):
-    value = dataset.attrs.get(name)
-    if value is None:
+    """A metadata mapping stored as JSON text or a mapping; absent is None, present but undecodable is refused."""
+    if name not in dataset.attrs:
         return None
+    value = dataset.attrs[name]
     try:
-        return json.loads(value) if isinstance(value, str) else dict(value)
-    except (TypeError, ValueError):
-        return None
+        decoded = json.loads(value) if isinstance(value, (str, bytes, bytearray)) else value
+    except ValueError as error:
+        _fail(f"the dataset attribute {name!r} is present but is not valid JSON ({error}); it is not treated as absent")
+    if not isinstance(decoded, Mapping):
+        _fail(f"the dataset attribute {name!r} is present but is not a mapping (found {type(decoded).__name__}); "
+              "it is not treated as absent")
+    return dict(decoded)
 
 
 def _skew3(v) -> np.ndarray:
@@ -236,14 +253,33 @@ def _displacement_input(raos, dataset, keys, nw, nh) -> np.ndarray:
     return values
 
 
+def _motion_hash(values: np.ndarray, omega, wave_direction, keys) -> str:
+    """SHA-256 of the canonical displacement-RAO array: little-endian complex128, C order, -0.0 normalised to 0.0, with
+    its omega and wave_direction coordinates, DOF keys and shape (pattern of anyhydro.mean_drift)."""
+    h = hashlib.sha256()
+    h.update(json.dumps({"omega": [repr(float(v)) for v in omega], "wave_direction": [repr(float(v)) for v in wave_direction],
+                         "radiating_dof": [str(k) for k in keys], "shape": list(values.shape),
+                         "dtype": "complex128 little-endian, C order"}, sort_keys=True).encode())
+    h.update(np.ascontiguousarray((values + (0.0 + 0.0j)).astype("<c16")).tobytes())
+    return h.hexdigest()
+
+
 def vessel_type_data(dataset, mass_properties: DeclaredMassProperties, *, length_scale: float, gravity: float,
-                     displacement_raos=None, include_mean_drift: bool = True) -> dict:
+                     displacement_raos=None, motions_source: str | None = None, include_mean_drift: bool = True) -> dict:
     """Validate, compose and convert a single-body ANYhydro dataset into plain OrcaFlex vessel-type data.
 
     Returns ``{"format", "units_system", "scalars", "indexed", "matrices", "rao_sets", "added_mass_damping",
     "provenance"}`` in OrcaFlex SI units (te, kN, m, s; angles in degrees in the RAO tables). Pure: no OrcFxAPI.
     Raises :class:`OrcaFlexExportError` for everything that cannot be exported faithfully.
+
+    ``displacement_raos`` (optional) needs ``motions_source``, a non-empty description of where the motions come from; the
+    provenance records it together with a SHA-256 of the canonical complex motion array and its coordinates.
     """
+    if displacement_raos is None:
+        if motions_source is not None:
+            _fail("motions_source was given without displacement_raos")
+    elif not isinstance(motions_source, str) or not motions_source.strip():
+        _fail("displacement_raos need motions_source: a non-empty string declaring where the motions come from")
     if not isinstance(mass_properties, DeclaredMassProperties):
         _fail("mass_properties must be a DeclaredMassProperties record (mass, centre of gravity and inertia are required)")
     length = _finite_float(length_scale, "length_scale", positive=True)
@@ -255,8 +291,8 @@ def vessel_type_data(dataset, mass_properties: DeclaredMassProperties, *, length
     _check_conventions(dataset)
     try:
         validate_hydro_dataset(dataset)
-    except HydroError as error:
-        _fail(f"the dataset is not a valid ANYhydro dataset: {error}")
+    except (HydroError, ValueError, TypeError, KeyError) as error:      # the schema validator can raise raw ValueError
+        _fail(f"the dataset is not a valid ANYhydro dataset: {error!s}")
     bodies = [str(b) for b in dataset["body"].values.tolist()]
     if len(bodies) != 1:
         _fail(f"single body only: the dataset has {len(bodies)} bodies (multibody export is not implemented)")
@@ -384,6 +420,7 @@ def vessel_type_data(dataset, mass_properties: DeclaredMassProperties, *, length
                         "heave_roll_pitch": "zero (not provided by the far-field method)",
                         "units": "kN/m^2, kN.m/m^2 per unit wave amplitude squared; yaw about the rotation centre"}
     motions = None if displacement_raos is None else _displacement_input(displacement_raos, dataset, keys, nw, nh_raw)
+    motion_hash = None if motions is None else _motion_hash(motions, omega, wave_direction, keys)
 
     degrees = np.degrees(wave_direction) % 360.0
     degrees = np.where(degrees > 360.0 - 1e-9, degrees - 360.0, degrees)
@@ -500,10 +537,18 @@ def vessel_type_data(dataset, mass_properties: DeclaredMassProperties, *, length
         "omega_band_rad_s": [float(omega[0]), float(omega[-1])],
         "mean_drift": drift_status,
         "displacement_raos": ("not supplied" if motions is None else {
-            "units": "m/m translations, rad/m rotations about the rotation centre", "phase": "arg X, lags"}),
+            "units": "m/m translations, rad/m rotations about the rotation centre", "phase": "arg X, lags",
+            "source": motions_source.strip(), "motion_hash": motion_hash, "hash_algorithm": "sha256",
+            "hash_covers": "omega, wave_direction, radiating_dof, shape and the complex128 little-endian C-order array",
+            "radiating_dof": list(keys)}),
+        "load_coefficient_blocks": {
+            "status": "zeroed, not exported",
+            "reason": "a new vessel type holds Orcina's default tanker; no default data may act if a user enables the effect",
+            "zeroed_scalars": list(ZEROED_LOAD_SCALARS),
+            "zeroed_tables": {block: list(names) for block, names in ZEROED_LOAD_TABLES.items()}},
         "added_mass_infinite": str(dataset["added_mass_infinite"].attrs.get("source", "")) or "dataset added_mass_infinite",
         "not_exported": ["surge/sway/yaw hydrostatic stiffness", "full QTFs and sum-frequency QTFs",
-                         "current, wind and other damping coefficients", "vessel-level (Vessel object) settings"],
+                         "current, wind and other damping coefficients (zeroed, not exported)", "vessel-level (Vessel object) settings"],
         "warnings": warnings,
         "orcaflex_gravity_m_s2": ORCAFLEX_GRAVITY,
         "orcaflex_gravity_relative_difference": abs(g - ORCAFLEX_GRAVITY) / ORCAFLEX_GRAVITY,
@@ -511,6 +556,8 @@ def vessel_type_data(dataset, mass_properties: DeclaredMassProperties, *, length
     return {
         "format": FORMAT, "units_system": "SI", "scalars": scalars, "indexed": indexed,
         "matrices": {"hydrostatic_stiffness": stiffness},
+        "zeroed_load_blocks": {"scalars": {name: 0.0 for name in ZEROED_LOAD_SCALARS},
+                               "tables": {block: list(names) for block, names in ZEROED_LOAD_TABLES.items()}},
         "rao_sets": {"Wave load RAO": load, "Displacement RAO": displacement_set, "Wave drift QTF": drift_set},
         "added_mass_damping": {
             "frequencies": omega.copy(), "added_mass": A_s * UNIT_FACTORS["added_mass"],
@@ -542,12 +589,28 @@ def _set_upper(vt, prefix: str, matrix) -> None:
             vt.SetData(prefix + column, i, float(matrix[i][j]))
 
 
-def _write_rao_set(o, vt, which: str, spec: dict, origin, phase_origin) -> None:
+def _effective_rao_sets(data: dict) -> dict:
+    """The three RAO sets exactly as written: unused sets are the zero tables, origins are resolved; the drift QTF has no
+    phase origin. The writer and the read-back both use this one description."""
+    origin = data["rao_sets"]["Wave load RAO"]["origin"]
+    out = {}
+    for which in _RAO_SETS:
+        spec = data["rao_sets"][which]
+        if spec is None:
+            spec = _zero_set(which != "Wave drift QTF")
+        phase_origin = None
+        if which != "Wave drift QTF":
+            phase_origin = spec["phase_origin"] if spec["phase_origin"] is not None else (0.0, 0.0, 0.0)
+        out[which] = dict(spec, origin=[float(v) for v in (spec["origin"] or origin)],
+                          phase_origin=None if phase_origin is None else [float(v) for v in phase_origin])
+    return out
+
+
+def _write_rao_set(o, vt, which: str, spec: dict) -> None:
     vt.SelectedRAOs = which
-    vt.RAOOriginX, vt.RAOOriginY, vt.RAOOriginZ = [float(v) for v in (spec["origin"] or origin)]
-    if which != "Wave drift QTF":
-        po = spec["phase_origin"] if spec["phase_origin"] is not None else phase_origin
-        vt.RAOPhaseOriginX, vt.RAOPhaseOriginY, vt.RAOPhaseOriginZ = [float(v) for v in po]
+    vt.RAOOriginX, vt.RAOOriginY, vt.RAOOriginZ = spec["origin"]
+    if spec["phase_origin"] is not None:
+        vt.RAOPhaseOriginX, vt.RAOPhaseOriginY, vt.RAOPhaseOriginZ = spec["phase_origin"]
     directions = [float(d) for d in spec["directions_deg"]]
     vt.NumberOfRAODirections = len(directions)
     for i in range(len(directions)):             # park on unique values first: OrcaFlex refuses duplicate directions
@@ -579,8 +642,93 @@ def _close(a, b) -> bool:
     return abs(a - b) <= 1e-9 * max(abs(a), abs(b)) + 1e-12
 
 
+def _same_value(a: float, b: float) -> bool:
+    return a == b or _close(a, b)
+
+
+def _match(expected, actual):
+    """One-to-one match by value (OrcaFlex re-sorts tables): returns (index map, unmatched expected, unused actual)."""
+    free = list(range(len(actual)))
+    found, missing = {}, []
+    for k, e in enumerate(expected):
+        hit = next((i for i in free if _same_value(float(actual[i]), float(e))), None)
+        if hit is None:
+            missing.append(k)
+        else:
+            found[k] = hit
+            free.remove(hit)
+    return found, missing, free
+
+
+def _verify_rao_set(vt, which: str, spec: dict, infinity: float, problems: list) -> None:
+    vt.SelectedRAOs = which
+    got_origin = [float(vt.RAOOriginX), float(vt.RAOOriginY), float(vt.RAOOriginZ)]
+    if not all(_close(g, w) for g, w in zip(got_origin, spec["origin"])):
+        problems.append(f"{which}: response origin wrote {spec['origin']}, read {got_origin}")
+    if spec["phase_origin"] is not None:
+        got_phase_origin = [float(vt.RAOPhaseOriginX), float(vt.RAOPhaseOriginY), float(vt.RAOPhaseOriginZ)]
+        if not all(_close(g, w) for g, w in zip(got_phase_origin, spec["phase_origin"])):
+            problems.append(f"{which}: phase origin wrote {spec['phase_origin']}, read {got_phase_origin}")
+    directions = []
+    for i in range(vt.NumberOfRAODirections):
+        vt.SelectedRAODirectionIndex = i
+        directions.append(float(vt.RAODirection))
+    wanted = [float(d) for d in spec["directions_deg"]]
+    if len(directions) != len(wanted):
+        problems.append(f"{which}: directions wrote {len(wanted)}, read {len(directions)}")
+    mapping, missing, extra = _match(wanted, directions)
+    problems.extend(f"{which}: directions {wanted[k]:g} not found after writing" for k in missing)
+    if extra and len(directions) == len(wanted):
+        problems.append(f"{which}: directions read back contain unexpected values")
+    wanted_frequencies = [float(w) for w in spec["frequencies"]] + [infinity]
+    with_phase = spec["phase_deg"] is not None
+    for k, index in mapping.items():
+        d = wanted[k]
+        vt.SelectedRAODirectionIndex = index
+        rows = [float(vt.GetData("RAOPeriodOrFrequency", r)) for r in range(vt.GetDataRowCount("RAOPeriodOrFrequency"))]
+        if len(rows) != len(wanted_frequencies):
+            problems.append(f"{which} {d:g} deg: frequencies wrote {len(wanted_frequencies)} rows, read {len(rows)}")
+        found, absent, _ = _match(wanted_frequencies, rows)
+        problems.extend(f"{which} {d:g} deg: frequencies {wanted_frequencies[j]:g} not found after writing" for j in absent)
+        for j, r in found.items():
+            finite = j < len(spec["frequencies"])
+            w = wanted_frequencies[j]
+            for c, name in enumerate(_RAO_COLUMNS):
+                want_amp = float(spec["amplitude"][k, j, c]) if finite else 0.0
+                if not _close(float(vt.GetData(f"RAO{name}Amp", r)), want_amp):
+                    problems.append(f"{which} {d:g} deg w={w:g} {name} amplitude")
+                if with_phase and want_amp != 0.0:           # at zero amplitude the phase carries no information
+                    want_z = np.exp(1j * math.radians(float(spec["phase_deg"][k, j, c])))
+                    got_z = np.exp(1j * math.radians(float(vt.GetData(f"RAO{name}Phase", r))))
+                    if abs(got_z - want_z) > 1e-8:
+                        problems.append(f"{which} {d:g} deg w={w:g} {name} phase")
+
+
+def _verify_added_mass_damping(vt, amd: dict, infinity: float, problems: list) -> None:
+    count = vt.NumberOfAddedMassAndDampingPeriodsOrFrequencies
+    periods = [float(vt.GetData("AMDPeriodOrFrequency", i)) for i in range(count)]
+    wanted = [infinity] + [float(w) for w in amd["frequencies"]]
+    tables = [(amd["added_mass_infinite"], np.zeros((6, 6)))] + [
+        (amd["added_mass"][j], amd["damping"][j]) for j in range(len(amd["frequencies"]))]
+    if count != len(wanted):
+        problems.append(f"added mass and damping frequencies wrote {len(wanted)}, read {count}")
+    found, absent, _ = _match(wanted, periods)
+    problems.extend(f"added mass and damping frequencies {wanted[j]:g} not found after writing" for j in absent)
+    for j, i in found.items():
+        vt.SelectedAddedMassAndDampingPeriodOrFrequencyIndex = i
+        label = "at infinite frequency" if j == 0 else f"w={wanted[j]:g}"
+        for kind, prefix, matrix in (("added mass", "AddedMassMatrix", tables[j][0]), ("damping", "Damping", tables[j][1])):
+            for c, column in enumerate(_MATRIX_COLUMNS):
+                for r in range(6):
+                    if not _close(float(vt.GetData(prefix + column, r)), float(matrix[r][c])):
+                        problems.append(f"{kind} {label} [{r},{c}]")
+
+
 def _verify_written(o, vt, data: dict) -> None:
-    """Read every written item back through OrcFxAPI and compare (tables by value: OrcaFlex re-sorts them)."""
+    """Read EVERYTHING written back through OrcFxAPI and compare: scalars, indexed items, the zeroed load blocks, every RAO
+    set (origins, phase origin, directions, frequencies, amplitudes, phases as unit phasors; unused sets must be the zero
+    tables) and every added-mass and damping row including the infinite-frequency row. Tables are matched by value because
+    OrcaFlex re-sorts them; exact membership is required (no extra and no missing directions or frequencies)."""
     vt.SelectedDraught = vt.GetData("DraughtName", 0)
     problems = []
     for name, value in data["scalars"].items():
@@ -592,31 +740,18 @@ def _verify_written(o, vt, data: dict) -> None:
         for i, value in enumerate(rows):
             if not _close(float(vt.GetData(name, i)), float(value)):
                 problems.append(f"{name}[{i}]: wrote {value!r}, read {vt.GetData(name, i)!r}")
+    for name in data["zeroed_load_blocks"]["scalars"]:
+        if float(vt.GetData(name, -1)) != 0.0:
+            problems.append(f"zeroed load coefficient {name} reads {vt.GetData(name, -1)!r}")
+    for block, names in data["zeroed_load_blocks"]["tables"].items():
+        for column in names:
+            for r in range(vt.GetDataRowCount(block + "Direction")):
+                if float(vt.GetData(column, r)) != 0.0:
+                    problems.append(f"zeroed load coefficient table {column}[{r}] reads {vt.GetData(column, r)!r}")
     infinity = o.OrcinaInfinity()
-    for which, spec in data["rao_sets"].items():
-        if spec is None:
-            continue
-        vt.SelectedRAOs = which
-        directions = {}
-        for i in range(vt.NumberOfRAODirections):
-            vt.SelectedRAODirectionIndex = i
-            directions[round(float(vt.RAODirection), 6)] = i
-        for k, d in enumerate(spec["directions_deg"]):
-            index = directions.get(round(float(d), 6))
-            if index is None:
-                problems.append(f"{which}: direction {d:g} not found after writing")
-                continue
-            vt.SelectedRAODirectionIndex = index
-            rows = {float(vt.GetData("RAOPeriodOrFrequency", r)): r for r in range(vt.GetDataRowCount("RAOPeriodOrFrequency"))}
-            for j, w in enumerate(list(spec["frequencies"]) + [infinity]):
-                r = rows.get(float(w))
-                if r is None:
-                    problems.append(f"{which}: frequency {w:g} not found after writing")
-                    continue
-                for c, name in enumerate(_RAO_COLUMNS):
-                    want = float(spec["amplitude"][k, j, c]) if j < len(spec["frequencies"]) else 0.0
-                    if not _close(float(vt.GetData(f"RAO{name}Amp", r)), want):
-                        problems.append(f"{which} {d:g} deg w={w:g} {name} amplitude")
+    for which, spec in _effective_rao_sets(data).items():
+        _verify_rao_set(vt, which, spec, infinity, problems)
+    _verify_added_mass_damping(vt, data["added_mass_damping"], infinity, problems)
     if problems:
         _fail("read-back after writing differs from the written data: " + "; ".join(problems[:8]))
 
@@ -658,11 +793,14 @@ def write_vessel_type(model, data: dict, *, name: str):
         for item, rows in data["indexed"].items():
             for i, value in enumerate(rows):
                 vt.SetData(item, i, float(value))
-        origin = data["rao_sets"]["Wave load RAO"]["origin"]
-        for which in _RAO_SETS:
-            spec = data["rao_sets"][which]
-            _write_rao_set(o, vt, which, spec if spec is not None else _zero_set(which != "Wave drift QTF"), origin,
-                           (0.0, 0.0, 0.0))
+        for item, value in data["zeroed_load_blocks"]["scalars"].items():
+            setattr(vt, item, float(value))
+        for block, names in data["zeroed_load_blocks"]["tables"].items():
+            for column in names:
+                for r in range(vt.GetDataRowCount(block + "Direction")):
+                    vt.SetData(column, r, 0.0)
+        for which, spec in _effective_rao_sets(data).items():
+            _write_rao_set(o, vt, which, spec)
         amd = data["added_mass_damping"]
         frequencies = [o.OrcinaInfinity()] + [float(w) for w in amd["frequencies"]]
         vt.NumberOfAddedMassAndDampingPeriodsOrFrequencies = len(frequencies)

@@ -28,8 +28,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Optional ecosystem packages that a clean base install does not provide.
-BLOCKED_OPTIONAL_PACKAGES = ("anyloads", "anyfileio", "capytaine")
+# Optional ecosystem packages that a clean base install does not provide.  OrcFxAPI is the licensed OrcaFlex
+# Python API: the portable runner must never execute licensed simulations, so its tests skip (importorskip) here.
+BLOCKED_OPTIONAL_PACKAGES = ("anyloads", "anyfileio", "capytaine", "OrcFxAPI")
 
 # Test modules selected for portable base CI.  Every module runs with only the
 # declared base dependencies; backend-dependent paths are mock-only.
@@ -215,7 +216,7 @@ class _OptionalDependencyBlocker:
 
 def _blocked_distribution_name(name) -> bool:
     normalized = str(name).lower().replace("_", "-").split(" ")[0]
-    return normalized in BLOCKED_OPTIONAL_PACKAGES
+    return normalized in {package.lower() for package in BLOCKED_OPTIONAL_PACKAGES}
 
 
 def _blocked_module_name(name) -> bool:

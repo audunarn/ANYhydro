@@ -45,7 +45,8 @@ changes are explicit edits to the allowlist, verified by the contract test.
 To make the selection behave identically on a clean base install and on a
 developer runtime that has optional packages installed, the runner installs
 import blockers for the optional ecosystem packages (`anyloads`, `anyfileio`,
-`capytaine`) and blocks their `importlib.metadata` lookups before invoking
+`capytaine`) and for the licensed OrcaFlex API `OrcFxAPI` (the runner never executes
+licensed simulations; tests that need it skip through `pytest.importorskip`) and blocks their `importlib.metadata` lookups before invoking
 pytest. Mock-only tests inject their doubles into `sys.modules` before
 importing, which the blockers do not interfere with, so accidental real
 optional/native execution fails loudly instead of silently passing locally.
@@ -72,7 +73,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_imports | base-import isolation (no optional Capytaine/Qt at import time) |
 | test_linux_owned_process | Linux process ownership (skips on Windows) |
 | test_mean_drift | far-field mean drift formulas, FFT derivative, MacCamy-Fuchs/Havelock cylinder anchor (scipy, no BEM) |
-| test_orcaflex_export | OrcaFlex vessel-type export data, conventions and refusals (pure); the OrcFxAPI round-trip and end-to-end checks skip without the licensed package |
+| test_orcaflex_export | OrcaFlex vessel-type export data, conventions and refusals (pure); the OrcFxAPI round-trip and end-to-end checks always skip under this runner (OrcFxAPI is blocked) and run only under a plain pytest call on a licensed machine; the read-back verifier is covered by pure writer-double tests |
 | test_owned_process | owned process lifecycle (stdlib subprocess) |
 | test_panel_accuracy_reference | panel accuracy reference contracts (mock Capytaine) |
 | test_panel_integration_candidate | panel integration candidate admission (mocked backend) |
