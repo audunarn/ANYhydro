@@ -503,6 +503,28 @@ def test_refuses_a_single_heading_and_conflicting_duplicates():
         export_data(make_dataset(headings=np.array([0.0, np.pi / 2, 2.0 * np.pi]), X=arrays["X"]))
 
 
+def test_duplicate_heading_disagreement_is_not_hidden_by_another_dofs_scale():
+    """Review round 2: surge +100 vs -100 N/m at 0 and 360 deg next to a 1e12 yaw coefficient was accepted (one
+    whole-array tolerance) and a heading dropped; the comparison is per DOF now."""
+    headings = np.array([0.0, np.pi / 2, 2.0 * np.pi])
+    arrays = default_arrays(headings, duplicate_of=0)
+    X = arrays["X"].copy()
+    X[:, :, 5] = 1e12                                   # an unrelated huge yaw coefficient
+    X[:, 0, 0], X[:, 2, 0] = 100.0, -100.0               # surge sign reversal between 0 and 360 deg
+    with pytest.raises(ox.OrcaFlexExportError, match="duplicate"):
+        export_data(make_dataset(headings=headings, X=X))
+
+
+def test_neutral_stiffness_records_a_finite_dropped_ratio():
+    """Review round 2: zero total stiffness gave NaN (non-standard JSON); a neutral system drops nothing."""
+    zero = np.zeros((6, 6))
+    assert ox._dropped_ratio(zero, zero, np.ones(6)) == 0.0
+    K = np.diag([0.0, 0.0, 2.0, 0.0, 0.0, 0.0]); K[5, 3] = 2.0
+    dropped = K.copy(); dropped[2, 2] = 0.0
+    assert ox._dropped_ratio(K, dropped, np.ones(6)) == pytest.approx(2.0 / np.sqrt(8.0))
+    json.dumps(export_data()["provenance"], allow_nan=False)
+
+
 # ------------------------------------------------------------------------------------------------ review round 1 (pure)
 def test_displacement_raos_need_a_declared_source():
     mot = np.ones((5, 8, 6), dtype=complex)
@@ -824,6 +846,18 @@ def _tamper_a_row(vt):
     vt.amd[2]["AddedMassMatrixZ"][2] *= 1.01
 
 
+def _tamper_phase_nan(vt):                    # review round 2: a NaN phase must not pass
+    _row(vt)["cols"]["RAOHeavePhase"] = float("nan")
+
+
+def _tamper_a_row_inf(vt):                    # review round 2: an infinite entry must not pass
+    vt.amd[2]["AddedMassMatrixZ"][2] = float("inf")
+
+
+def _tamper_amplitude_nan(vt):
+    _row(vt)["cols"]["RAOSurgeAmp"] = float("nan")
+
+
 def _tamper_b_row(vt):
     vt.amd[3]["DampingRx"][3] *= 0.99
 
@@ -900,6 +934,9 @@ def _tamper_indexed(vt):
 
 @pytest.mark.parametrize("tamper,needle", [
     (_tamper_phase, "phase"),
+    (_tamper_phase_nan, "phase"),
+    (_tamper_a_row_inf, "added mass"),
+    (_tamper_amplitude_nan, "amplitude"),
     (_tamper_origin, "origin"),
     (_tamper_drift_origin, "origin"),
     (_tamper_phase_origin, "phase origin"),

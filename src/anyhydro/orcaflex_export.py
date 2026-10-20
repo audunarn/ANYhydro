@@ -402,8 +402,7 @@ def vessel_type_data(dataset, mass_properties: DeclaredMassProperties, *, length
     K_hrp = K_total[block]
     not_exported = K_total.copy()
     not_exported[block] = 0.0
-    scaled_total = K_total * np.outer(scale, scale)
-    dropped_ratio = float(np.linalg.norm(not_exported * np.outer(scale, scale)) / np.linalg.norm(scaled_total))
+    dropped_ratio = _dropped_ratio(K_total, not_exported, scale)
 
     # ---------------------------------------------------------------- headings and tables
     wave_direction = np.asarray(dataset["wave_direction"].values, dtype=float)
@@ -434,8 +433,10 @@ def vessel_type_data(dataset, mass_properties: DeclaredMassProperties, *, length
         same = True
         for arr in (X, drift, motions):
             if arr is not None:
-                ref = float(np.abs(arr).max()) or 1.0
-                same = same and bool(np.allclose(arr[:, twin], arr[:, k], rtol=1e-9, atol=1e-9 * ref))
+                # per-quantity (per-DOF) scale: a large coefficient of another DOF cannot hide a disagreement
+                for dof in range(arr.shape[-1]):
+                    ref = float(np.abs(arr[..., dof]).max()) or 1.0
+                    same = same and bool(np.allclose(arr[:, twin, dof], arr[:, k, dof], rtol=1e-9, atol=1e-9 * ref))
         if not same:
             _fail(f"duplicate headings {np.degrees(wave_direction[twin]):g} and {np.degrees(wave_direction[k]):g} degrees "
                   "are equal modulo 360 but their data differ: OrcaFlex rejects equal directions and nothing is merged "
@@ -638,8 +639,17 @@ def _write_rao_set(o, vt, which: str, spec: dict) -> None:
                 vt.SetData(f"RAO{name}Phase", last, 0.0)
 
 
+def _dropped_ratio(K_total, not_exported, scale) -> float:
+    """Normalised Frobenius share of the stiffness not written; a neutral system (zero total stiffness) drops
+    nothing and records 0, never a NaN (review round 2)."""
+    S = np.outer(scale, scale)
+    total = float(np.linalg.norm(K_total * S))
+    return float(np.linalg.norm(not_exported * S)) / total if total > 0.0 else 0.0
+
+
 def _close(a, b) -> bool:
-    return abs(a - b) <= 1e-9 * max(abs(a), abs(b)) + 1e-12
+    # non-finite read-back values never match (inf - finite and NaN comparisons fail open otherwise; review round 2)
+    return bool(math.isfinite(a) and math.isfinite(b) and abs(a - b) <= 1e-9 * max(abs(a), abs(b)) + 1e-12)
 
 
 def _same_value(a: float, b: float) -> bool:
@@ -700,7 +710,7 @@ def _verify_rao_set(vt, which: str, spec: dict, infinity: float, problems: list)
                 if with_phase and want_amp != 0.0:           # at zero amplitude the phase carries no information
                     want_z = np.exp(1j * math.radians(float(spec["phase_deg"][k, j, c])))
                     got_z = np.exp(1j * math.radians(float(vt.GetData(f"RAO{name}Phase", r))))
-                    if abs(got_z - want_z) > 1e-8:
+                    if not np.isfinite(got_z) or abs(got_z - want_z) > 1e-8:
                         problems.append(f"{which} {d:g} deg w={w:g} {name} phase")
 
 
