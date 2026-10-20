@@ -1431,11 +1431,11 @@ def _reconstruct_added_mass(time, kernel, a_inf, omegas):
 def _relative_sample_ratios(samples):
     """Per-sample relative passivity / asymmetry ratios, safe against overflow.
 
-    ``samples`` is (n_w, n, n) and finite. Each sample ``X`` is divided by ``m = max|X|`` first (entries
-    in [-1, 1], spectral norm <= n, so no intermediate can overflow even when ``norm(X, 2)`` itself would
-    exceed the float range); the ratios are mathematically those of ``X``: the smallest eigenvalue of
-    the symmetric part over the spectral norm of that symmetric part, and ``|X_ij - X_ji|`` over the spectral
-    norm of ``X``. An all-zero sample gives ratio 0 (zero tolerance), never a division. Returns
+    ``samples`` is (n_w, n, n) and finite. The asymmetry ratio ``|X_ij - X_ji|`` over the spectral norm of
+    ``X`` is computed on ``X / max|X|``; the passivity ratio (smallest eigenvalue of the symmetric part over
+    the spectral norm of that symmetric part) on the symmetric part formed from ``X`` itself and scaled by
+    ITS OWN largest entry, so a dominant skew part cannot underflow a small symmetric part (review round 3).
+    No intermediate overflows (entries in [-1, 1], spectral norms <= n). An all-zero sample gives ratio 0 (zero tolerance), never a division. Returns
     ``(eig_ratio (n_w,), asymmetry_ratio (n_w, n, n))``. Any non-finite norm or ratio raises
     RadiationError: a violation is never recorded as a silent 0.
     """
@@ -1449,14 +1449,17 @@ def _relative_sample_ratios(samples):
             continue
         xs = x / peak
         own = float(np.linalg.norm(xs, 2))
-        sym = 0.5 * (xs + xs.T)
-        sym_norm = float(np.linalg.norm(sym, 2))
-        _require(bool(np.isfinite(own) and np.isfinite(sym_norm)),
+        # symmetric part from the unscaled sample: exact (sum then halve) unless the sum could overflow, where
+        # halving first can only drop subnormal halves; then scaled by its own peak
+        sym = (x + x.T) * 0.5 if peak <= 1.0e300 else 0.5 * x + 0.5 * x.T
+        sym_peak = float(np.max(np.abs(sym)))
+        sym_norm = float(np.linalg.norm(sym / sym_peak, 2)) if sym_peak > 0.0 else 0.0
+        _require(bool(np.isfinite(own) and np.isfinite(sym_norm) and np.isfinite(sym_peak)),
                  RadiationError("non-finite sample norm in the relative-basis ratios; refusing"))
         if own > 0.0:
             asym_ratio[k] = np.abs(xs - xs.T) / own
         if sym_norm > 0.0:
-            eig_ratio[k] = float(np.linalg.eigvalsh(sym).min()) / sym_norm
+            eig_ratio[k] = float(np.linalg.eigvalsh(sym / sym_peak).min()) / sym_norm
     _require(bool(np.all(np.isfinite(eig_ratio)) and np.all(np.isfinite(asym_ratio))),
              RadiationError("non-finite relative-basis ratio; refusing"))
     return eig_ratio, asym_ratio

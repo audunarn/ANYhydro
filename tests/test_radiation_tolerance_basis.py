@@ -299,6 +299,27 @@ def test_scaled_passivity_ratio_is_scale_invariant():
         assert np.all(asym_ratio == 0.0)
 
 
+def test_dominant_skew_part_cannot_hide_a_negative_symmetric_part():
+    """Review round 3: scaling the whole sample by its peak underflowed a small negative symmetric part
+    (-1e-200 next to a 1e200 skew pair) to zero, recording ratio 0; the symmetric part is now scaled by its own
+    peak, giving the true ratio -1 (helper) and a reported passivity violation (public kernel)."""
+    x = np.zeros((N_DOF, N_DOF))
+    x[:2, :2] = [[-1.0e-200, 1.0e200], [-1.0e200, 0.0]]
+    eig_ratio, _ = rad._relative_sample_ratios(x[None])
+    assert eig_ratio[0] == pytest.approx(-1.0, rel=1e-12)
+
+
+def test_dominant_skew_part_passivity_violation_through_a_kernel():
+    x = np.zeros((N_DOF, N_DOF))
+    x[:2, :2] = [[-1.0e-200, 1.0e200], [-1.0e200, 0.0]]
+    damping = np.array([x for _ in ORACLE_OMEGAS])
+    added = np.array([np.eye(N_DOF) * 10.0 for _ in ORACLE_OMEGAS])
+    kernel = _kernel_from_samples(added, damping, np.zeros((N_DOF, N_DOF)), tolerance_basis=RELATIVE,
+                                  symmetry_tol=2.0, passivity_tol=1e-8)
+    assert kernel.diagnostics.passivity_violations >= 1
+    assert kernel.diagnostics.min_damping_eigenvalue_ratio == pytest.approx(-1.0, rel=1e-12)
+
+
 def test_non_finite_samples_are_refused_not_recorded_as_zero():
     bad = np.eye(N_DOF)[None].copy()
     bad[0, 0, 1] = np.inf
