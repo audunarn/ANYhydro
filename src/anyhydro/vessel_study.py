@@ -96,7 +96,17 @@ class KernelRecipe:
     passivity_tol: float
     max_time_samples: int            # declared execution limit (independent of n_time)
     low_tail_extension_name: str = "linear_to_zero_from_first_frequency"
+    #: basis of symmetry_tol / passivity_tol (see RadiationSettings); the absolute default is omitted from to_dict
+    tolerance_basis: str = "absolute"
+    #: producer-side kernel symmetrisation ("none" or "symmetric_part") with its required skew bound (see
+    #: RadiationSettings); both omitted when "none"
+    kernel_symmetrisation: str = "none"
+    kernel_skew_bound: Optional[float] = None
 
+    #: optional identity keys with their omitted defaults (a default never appears in the record, so records and
+    #: hashes made before these fields existed are unchanged)
+    _OPTIONAL_DEFAULTS = {"tolerance_basis": "absolute", "kernel_symmetrisation": "none",
+                          "kernel_skew_bound": None}
     _KEYS = ("dt", "n_time", "bartlett_window", "symmetry_tol", "passivity_tol", "max_time_samples",
              "low_tail_extension_name")
 
@@ -107,6 +117,9 @@ class KernelRecipe:
             _require(isinstance(value, int) and not isinstance(value, bool) and value >= 2,
                      f"kernel {name} must be an integer >= 2")
         _require(self.n_time <= self.max_time_samples, "kernel n_time exceeds the declared max_time_samples")
+        from .radiation import TOLERANCE_BASES
+        _require(isinstance(self.tolerance_basis, str) and self.tolerance_basis in TOLERANCE_BASES,
+                 f"kernel tolerance_basis must be one of {tuple(TOLERANCE_BASES)}")
         object.__setattr__(self, "bartlett_window", _number(self.bartlett_window, "Bartlett window", positive=True))
         _require(self.bartlett_window <= (self.n_time - 1) * self.dt,
                  "the Bartlett window H must lie inside the kernel grid")
@@ -124,13 +137,19 @@ class KernelRecipe:
                 dt=self.dt, n_time=self.n_time, symmetry_tol=self.symmetry_tol, passivity_tol=self.passivity_tol,
                 low_tail_policy=LOW_TAIL_LINEAR_TO_ZERO, extension_name=self.low_tail_extension_name,
                 time_window=self.bartlett_window, time_window_shape=TIME_WINDOW_BARTLETT,
+                tolerance_basis=self.tolerance_basis, kernel_symmetrisation=self.kernel_symmetrisation,
+                kernel_skew_bound=self.kernel_skew_bound,
                 quadrature_method=QUADRATURE_PIECEWISE_LINEAR, high_tail_policy=HIGH_TAIL_TRUNCATE,
                 execution_limits=RadiationExecutionLimits(max_time_samples=self.max_time_samples))
         except RadiationError as error:
             raise VesselStudyError(f"kernel settings are not admissible: {error}") from error
 
     def to_dict(self) -> dict:
-        return {key: getattr(self, key) for key in self._KEYS}
+        data = {key: getattr(self, key) for key in self._KEYS}
+        for key, default in self._OPTIONAL_DEFAULTS.items():
+            if getattr(self, key) != default:
+                data[key] = getattr(self, key)
+        return data
 
 
 @dataclass(frozen=True)
@@ -253,8 +272,10 @@ class VesselStudyRecipe:
         _require([level.identity() for level in levels] == list(data["levels"]),
                  "the supplied level meshes do not match the recipe's bound mesh identities")
         kernel = data["kernel"]
-        _require(isinstance(kernel, Mapping) and set(kernel) == set(KernelRecipe._KEYS),
-                 f"kernel must contain exactly {list(KernelRecipe._KEYS)}")
+        _require(isinstance(kernel, Mapping) and set(KernelRecipe._KEYS) <= set(kernel)
+                 <= set(KernelRecipe._KEYS) | set(KernelRecipe._OPTIONAL_DEFAULTS),
+                 f"kernel must contain {list(KernelRecipe._KEYS)} and only the optional keys "
+                 f"{list(KernelRecipe._OPTIONAL_DEFAULTS)}")
         depth = data["water_depth"]
         recipe = cls(title=data["title"], body_id=data["body_id"], levels=levels,
                      rotation_center=data["rotation_center"], center_of_mass=data["center_of_mass"],

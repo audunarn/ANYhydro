@@ -249,6 +249,7 @@ SETTINGS_SERIALIZED_KEYS = frozenset({
     "high_tail_policy", "high_tail_exponent", "high_tail_upper", "high_tail_name",
     "high_tail_scope", "a_inf_policy", "a_inf_calibration_min", "a_inf_calibration_max",
     "a_inf_calibration_dt", "time_window_shape", "tolerance_basis",
+    "kernel_symmetrisation", "kernel_skew_bound",
 })
 #: time-window shapes: legacy rectangular cut (zero after H) or the Bartlett taper (1 - t/H)+ whose transform (the
 #: Fejer kernel) is non-negative, so a passive spectrum stays passive (ADR-015 section 8 (iv)(d), energy note)
@@ -261,6 +262,15 @@ TIME_WINDOW_SHAPES = (TIME_WINDOW_RECTANGULAR, TIME_WINDOW_BARTLETT)
 TOLERANCE_BASIS_ABSOLUTE = "absolute"
 TOLERANCE_BASIS_RELATIVE = "relative_to_sample_norm"
 TOLERANCE_BASES = (TOLERANCE_BASIS_ABSOLUTE, TOLERANCE_BASIS_RELATIVE)
+#: producer-side kernel symmetrisation: none (default; omitted when serialised) or the declared symmetric part
+#: (K_l <- (K_l + K_l^T)/2 per time sample) with a recorded, bounded, unit-invariant skew (provenance record)
+KERNEL_SYMMETRISATION_NONE = "none"
+KERNEL_SYMMETRISATION_SYMMETRIC_PART = "symmetric_part"
+KERNEL_SYMMETRISATIONS = (KERNEL_SYMMETRISATION_NONE, KERNEL_SYMMETRISATION_SYMMETRIC_PART)
+KERNEL_SYMMETRISATION_RECORD_KEY = "kernel_symmetrisation"
+KERNEL_SYMMETRISATION_RECORD_FIELDS = (
+    "option", "skew_bound", "pairwise_skew_over_peak", "max_abs_change_over_max_abs_kernel",
+    "worst_sample", "worst_sample_skew_ratio", "n_samples_over_1e-2_per_sample")
 #: optional diagnostics recorded for (and only for) the relative tolerance basis
 RATIO_DIAGNOSTIC_NAMES = ("min_damping_eigenvalue_ratio", "max_damping_asymmetry_ratio",
                           "max_added_mass_asymmetry_ratio")
@@ -326,6 +336,11 @@ class RadiationSettings:
     a_inf_calibration_dt: Optional[float] = None
     #: ``tolerance_basis``: "absolute" (legacy; omitted when serialised) or "relative_to_sample_norm".
     tolerance_basis: str = TOLERANCE_BASIS_ABSOLUTE
+    #: ``kernel_symmetrisation``: "none" (default; omitted when serialised) or "symmetric_part": the produced kernel is
+    #: the symmetric part of each time sample; ``kernel_skew_bound`` (required then, forbidden otherwise) bounds the
+    #: removed skew in the unit-invariant pairwise peak-normalised measure (refusal above it).
+    kernel_symmetrisation: str = KERNEL_SYMMETRISATION_NONE
+    kernel_skew_bound: Optional[float] = None
 
     def __post_init__(self) -> None:
         try:
@@ -371,6 +386,17 @@ class RadiationSettings:
 
         _require(isinstance(self.tolerance_basis, str) and self.tolerance_basis in TOLERANCE_BASES,
                  RadiationSettingsError(f"tolerance_basis must be one of {TOLERANCE_BASES}"))
+
+        _require(isinstance(self.kernel_symmetrisation, str) and self.kernel_symmetrisation in KERNEL_SYMMETRISATIONS,
+                 RadiationSettingsError(f"kernel_symmetrisation must be one of {KERNEL_SYMMETRISATIONS}"))
+        if self.kernel_symmetrisation == KERNEL_SYMMETRISATION_NONE:
+            _require(self.kernel_skew_bound is None,
+                     RadiationSettingsError("kernel_skew_bound is only valid with kernel_symmetrisation"))
+        else:
+            _require(isinstance(self.kernel_skew_bound, (int, float)) and not isinstance(self.kernel_skew_bound, bool)
+                     and np.isfinite(self.kernel_skew_bound) and self.kernel_skew_bound > 0.0,
+                     RadiationSettingsError("kernel_symmetrisation requires a finite kernel_skew_bound > 0"))
+            object.__setattr__(self, "kernel_skew_bound", float(self.kernel_skew_bound))
 
         policy = str(self.low_tail_policy)
         _require(policy in LOW_TAIL_POLICIES,
@@ -543,6 +569,10 @@ class RadiationSettings:
         # The absolute default keeps the exact old serialized form and hashes.
         if self.tolerance_basis != TOLERANCE_BASIS_ABSOLUTE:
             data["tolerance_basis"] = self.tolerance_basis
+        # Same for the undeclared symmetrisation.
+        if self.kernel_symmetrisation != KERNEL_SYMMETRISATION_NONE:
+            data["kernel_symmetrisation"] = self.kernel_symmetrisation
+            data["kernel_skew_bound"] = float(self.kernel_skew_bound)
         if self.a_inf_policy != A_INF_COMPUTED:
             data["a_inf_policy"] = self.a_inf_policy
             data["a_inf_calibration_min"] = float(self.a_inf_calibration_min)
@@ -604,6 +634,8 @@ class RadiationSettings:
                 a_inf_calibration_max=data.get("a_inf_calibration_max"),
                 a_inf_calibration_dt=data.get("a_inf_calibration_dt"),
                 tolerance_basis=data.get("tolerance_basis", TOLERANCE_BASIS_ABSOLUTE),
+                kernel_symmetrisation=data.get("kernel_symmetrisation", KERNEL_SYMMETRISATION_NONE),
+                kernel_skew_bound=data.get("kernel_skew_bound"),
             )
         except KeyError as exc:
             raise RadiationSettingsError(
@@ -1063,6 +1095,38 @@ def _check_diagnostics_match_settings(settings: "RadiationSettings", diagnostics
                                 f"{basis_name} against the declared tolerance (basis {settings.tolerance_basis})"))
 
 
+def _pairwise_skew_over_peak(kernel: np.ndarray) -> float:
+    """Unit-invariant skew of a kernel series: max over pairs of max_l|K_ij - K_ji|/2 divided by
+    sqrt(max_l|K_ii| max_l|K_jj|) (invariant under independent rescaling of the coordinates). A pair with a skew but
+    a zero diagonal peak has no scale: infinity (refused by any bound)."""
+    skew = 0.5 * np.abs(kernel - kernel.transpose(0, 2, 1)).max(axis=0)
+    peak = np.abs(np.diagonal(kernel, axis1=1, axis2=2)).max(axis=0)
+    root = np.sqrt(peak)                       # sqrt(a)*sqrt(b): no overflow/underflow of the product
+    scale = np.outer(root, root)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(skew > 0.0, np.where(scale > 0.0, skew / scale, np.inf), 0.0)
+    return float(ratio.max()) if ratio.size else 0.0
+
+
+def _check_kernel_symmetrisation_record(settings, kernel, provenance) -> None:
+    """Fail closed: the declared symmetrisation, the kernel data and the recorded skew must agree."""
+    declared = settings.kernel_symmetrisation != KERNEL_SYMMETRISATION_NONE
+    record = provenance.get(KERNEL_SYMMETRISATION_RECORD_KEY)
+    if not declared:
+        _require(record is None,
+                 RadiationError("a kernel symmetrisation record needs kernel_symmetrisation in the settings"))
+        return
+    _require(isinstance(record, Mapping) and set(record) == set(KERNEL_SYMMETRISATION_RECORD_FIELDS),
+             RadiationError(f"kernel_symmetrisation declared but the record must contain exactly "
+                            f"{KERNEL_SYMMETRISATION_RECORD_FIELDS}"))
+    _require(np.array_equal(kernel, kernel.transpose(0, 2, 1)),
+             RadiationError("kernel_symmetrisation declared but the kernel is not exactly symmetric"))
+    skew = record["pairwise_skew_over_peak"]
+    _require(record["option"] == settings.kernel_symmetrisation and record["skew_bound"] == settings.kernel_skew_bound
+             and isinstance(skew, float) and np.isfinite(skew) and 0.0 <= skew <= settings.kernel_skew_bound,
+             RadiationError("kernel_symmetrisation record contradicts the settings or the declared skew bound"))
+
+
 @dataclass(frozen=True)
 class RadiationKernel:
     """Immutable causal radiation kernel artifact with full provenance.
@@ -1141,6 +1205,7 @@ class RadiationKernel:
                                     "derived-operator kernel only, with its recorded step"))
         assumptions = tuple(str(a) for a in self.assumptions)
         object.__setattr__(self, "assumptions", assumptions)
+        _check_kernel_symmetrisation_record(self.settings, kernel, self.provenance)
 
     @property
     def n_dof(self) -> int:
@@ -1671,6 +1736,13 @@ def _kernel_from_arrays(
             "radiation passivity are not established. duration_over_spacing_period "
             "is a legacy spacing indicator, not an alias recurrence criterion."
         )
+    # symmetrised BEFORE the A_inf calibration: the band-consistent A_inf is proved against the carried kernel
+    if settings.kernel_symmetrisation != KERNEL_SYMMETRISATION_NONE:
+        kernel, provenance = _symmetrise_kernel(kernel, settings, provenance)
+        assumptions.append(
+            "kernel_symmetrisation=symmetric_part: each kernel time sample replaced by (K + K^T)/2; the removed skew "
+            "is recorded in the provenance and bounded; the symmetric part is the kernel the A_inf calibration, the "
+            "diagnostics' source data and every later verification refer to (a declared modelling approximation)")
     if settings.a_inf_policy == A_INF_BAND_CONSISTENT:
         cal = (omegas >= settings.a_inf_calibration_min) & (omegas <= settings.a_inf_calibration_max)
         _require(int(np.count_nonzero(cal)) >= 2,
@@ -1725,6 +1797,31 @@ def _kernel_from_arrays(
         provenance=provenance,
         assumptions=tuple(assumptions),
     )
+
+
+def _symmetrise_kernel(kernel, settings, provenance):
+    kernel = np.asarray(kernel, dtype=np.float64)
+    symmetric = 0.5 * (kernel + kernel.transpose(0, 2, 1))
+    pairwise = _pairwise_skew_over_peak(kernel)
+    _require(pairwise <= settings.kernel_skew_bound,
+             RadiationError(f"kernel skew {pairwise:.6g} (pairwise, peak-normalised) exceeds the declared "
+                            f"kernel_skew_bound {settings.kernel_skew_bound:.6g}; refusing"))
+    peak = float(np.abs(kernel).max())
+    change = float(np.abs(kernel - symmetric).max())
+    norms = np.linalg.norm(kernel.reshape(kernel.shape[0], -1), axis=1)
+    skew_norms = np.linalg.norm((0.5 * (kernel - kernel.transpose(0, 2, 1))).reshape(kernel.shape[0], -1), axis=1)
+    sample_ratio = np.where(norms > 0.0, skew_norms / np.where(norms > 0.0, norms, 1.0), 0.0)
+    worst = int(np.argmax(sample_ratio)) if sample_ratio.size else 0
+    record = {
+        "option": settings.kernel_symmetrisation, "skew_bound": float(settings.kernel_skew_bound),
+        "pairwise_skew_over_peak": float(pairwise),
+        "max_abs_change_over_max_abs_kernel": change / peak if peak > 0.0 else 0.0,
+        "worst_sample": worst, "worst_sample_skew_ratio": float(sample_ratio[worst]) if sample_ratio.size else 0.0,
+        "n_samples_over_1e-2_per_sample": int(np.count_nonzero(sample_ratio > 1.0e-2)),
+    }
+    provenance = dict(provenance)
+    provenance[KERNEL_SYMMETRISATION_RECORD_KEY] = record
+    return symmetric, provenance
 
 
 def radiation_kernel_from_derived_operators(
