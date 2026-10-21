@@ -98,10 +98,15 @@ class KernelRecipe:
     low_tail_extension_name: str = "linear_to_zero_from_first_frequency"
     #: basis of symmetry_tol / passivity_tol (see RadiationSettings); the absolute default is omitted from to_dict
     tolerance_basis: str = "absolute"
+    #: producer-side kernel symmetrisation ("none" or "symmetric_part") with its required skew bound (see
+    #: RadiationSettings); both omitted when "none"
+    kernel_symmetrisation: str = "none"
+    kernel_skew_bound: Optional[float] = None
 
     #: optional identity keys with their omitted defaults (a default never appears in the record, so records and
     #: hashes made before these fields existed are unchanged)
-    _OPTIONAL_DEFAULTS = {"tolerance_basis": "absolute"}
+    _OPTIONAL_DEFAULTS = {"tolerance_basis": "absolute", "kernel_symmetrisation": "none",
+                          "kernel_skew_bound": None}
     _KEYS = ("dt", "n_time", "bartlett_window", "symmetry_tol", "passivity_tol", "max_time_samples",
              "low_tail_extension_name")
 
@@ -132,7 +137,8 @@ class KernelRecipe:
                 dt=self.dt, n_time=self.n_time, symmetry_tol=self.symmetry_tol, passivity_tol=self.passivity_tol,
                 low_tail_policy=LOW_TAIL_LINEAR_TO_ZERO, extension_name=self.low_tail_extension_name,
                 time_window=self.bartlett_window, time_window_shape=TIME_WINDOW_BARTLETT,
-                tolerance_basis=self.tolerance_basis,
+                tolerance_basis=self.tolerance_basis, kernel_symmetrisation=self.kernel_symmetrisation,
+                kernel_skew_bound=self.kernel_skew_bound,
                 quadrature_method=QUADRATURE_PIECEWISE_LINEAR, high_tail_policy=HIGH_TAIL_TRUNCATE,
                 execution_limits=RadiationExecutionLimits(max_time_samples=self.max_time_samples))
         except RadiationError as error:
