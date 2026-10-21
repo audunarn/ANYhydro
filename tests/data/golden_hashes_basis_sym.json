@@ -1,0 +1,26 @@
+{
+ "kernel_recipe_dict": {
+  "bartlett_window": 20.0,
+  "dt": 0.1,
+  "low_tail_extension_name": "linear_to_zero_from_first_frequency",
+  "max_time_samples": 401,
+  "n_time": 401,
+  "passivity_tol": 1e-06,
+  "symmetry_tol": 1e-06
+ },
+ "recipe_hash": "12cc89209b01f2b788f3df7b4c6839e781b46d2c5968253d19c3e193f5ee9d6c",
+ "settings_dict_keys": [
+  "dt",
+  "execution_limits",
+  "extension_name",
+  "low_tail_policy",
+  "n_time",
+  "passivity_tol",
+  "quadrature_method",
+  "symmetry_tol",
+  "time_window",
+  "time_window_shape",
+  "zero_frequency_damping"
+ ],
+ "settings_dict_sha256": "d331f248d02dc2929d251da832c59baa14b7ebc46276e2d35a8ab990c2010edb"
+}
