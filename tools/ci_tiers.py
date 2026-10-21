@@ -101,7 +101,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(tests)} tests in the table, {len(slow)} slow (>= {SLOW_SECONDS} s, "
               f"{sum(tests[i] for i in slow):.0f} s of {sum(tests.values()):.0f} s)")
         return 0
-    durations, unmapped = junit_durations(_junit_files(args.junit))
+    files = _junit_files(args.junit)
+    durations, unmapped = junit_durations(files)
+    if not files or not durations:
+        print(f"{args.command}: no JUnit results found in the input; nothing was checked", file=sys.stderr)
+        return 1
+    if args.command == "guard" and unmapped:
+        print(f"guard: {len(unmapped)} JUnit cases could not be mapped to a test file, e.g. {unmapped[:3]}", file=sys.stderr)
+        return 1
     if args.command == "update":
         if unmapped:
             print(f"{len(unmapped)} JUnit cases could not be mapped to a test file, e.g. {unmapped[:3]}", file=sys.stderr)

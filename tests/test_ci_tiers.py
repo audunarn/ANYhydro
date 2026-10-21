@@ -147,3 +147,105 @@ def test_a_child_holding_the_output_pipe_does_not_hold_up_a_finished_job(tmp_pat
     status, out = dev_checks.run_with_timeout([sys.executable, "-c", code], cwd=tmp_path,
                                               env=dict(__import__("os").environ), timeout=20)
     assert status == 0 and "done" in out and time.time() - started < 15   # Windows: the leftover child is not killed (known limit)
+
+
+# --- fix round: review findings F1-F4 ---------------------------------------------------------------------------
+def _run_main_with_workdir(monkeypatch, workdir):
+    monkeypatch.setattr(dev_checks, "collect", lambda marker: ["tests/test_a.py::test_only"])
+    removed = []
+    monkeypatch.setattr(dev_checks.shutil, "rmtree", lambda p, *a, **k: removed.append(Path(p).resolve()))
+    try:
+        dev_checks.main(["--tier", "full", "--workdir", str(workdir)])
+    except BaseException:
+        pass
+    return removed
+
+
+@pytest.mark.parametrize("which", ["root", "parent", "fsroot", "home"])
+def test_workdir_never_deletes_repo_ancestors_or_home(monkeypatch, which):
+    target = {"root": dev_checks.ROOT, "parent": dev_checks.ROOT.parent,
+              "fsroot": Path(dev_checks.ROOT.anchor), "home": Path.home()}[which]
+    assert _run_main_with_workdir(monkeypatch, target) == []
+
+
+def test_workdir_refuses_a_foreign_non_empty_directory(monkeypatch, tmp_path):
+    (tmp_path / "precious.txt").write_text("x")
+    assert _run_main_with_workdir(monkeypatch, tmp_path) == []
+    assert (tmp_path / "precious.txt").exists()
+
+
+def test_workdir_own_directory_is_reused_and_fresh_is_created(tmp_path):
+    work = tmp_path / "w"
+    dev_checks.prepare_workdir(work)
+    assert (work / "tmp").is_dir()
+    (work / "leftover.log").write_text("old")
+    dev_checks.prepare_workdir(work)          # own (marker present): cleared and recreated
+    assert not (work / "leftover.log").exists() and (work / "tmp").is_dir()
+
+
+def test_workdir_symlink_is_refused(tmp_path):
+    target = tmp_path / "real"
+    target.mkdir()
+    (target / "keep.txt").write_text("x")
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("cannot create symlinks here")
+    with pytest.raises(SystemExit):
+        dev_checks.prepare_workdir(link)
+    assert (target / "keep.txt").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
+def test_finished_job_leaves_no_background_child(tmp_path):
+    pid_file = tmp_path / "child.pid"
+    code = (f"import subprocess,sys; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(120)']);"
+            f"open(r'{pid_file}','w').write(str(p.pid))")
+    status, _ = dev_checks.run_with_timeout([sys.executable, "-c", code], cwd=tmp_path, env=dict(__import__("os").environ), timeout=30)
+    assert status == 0
+    import time
+    pid = int(pid_file.read_text())
+    for _ in range(20):
+        if not dev_checks.pid_alive(pid):
+            break
+        time.sleep(0.25)
+    assert not dev_checks.pid_alive(pid)
+
+
+def test_kill_tree_uses_the_pgid_captured_at_start(monkeypatch):
+    if sys.platform == "win32":
+        pytest.skip("POSIX only")
+    import os, signal
+    calls = []
+    monkeypatch.setattr(os, "getpgid", lambda pid: (_ for _ in ()).throw(ProcessLookupError()))
+    monkeypatch.setattr(os, "killpg", lambda pg, sig: calls.append((pg, sig)))
+    class P:
+        pid = 4242
+        def kill(self): raise AssertionError("fallback kill used")
+    dev_checks._kill_tree(P())
+    assert calls == [(4242, signal.SIGKILL)]
+
+
+def test_guard_rejects_empty_input_and_unmapped_results(tmp_path, capsys):
+    assert ci_tiers.main(["guard"]) != 0
+    assert ci_tiers.main(["guard", str(tmp_path)]) != 0          # a directory without JUnit files
+    bad = tmp_path / "j.xml"
+    bad.write_text('<testsuite><testcase classname="nowhere.nothing" name="t" time="1"/></testsuite>')
+    assert ci_tiers.main(["guard", str(bad)]) != 0
+
+
+def test_verify_accepts_an_empty_slow_tier_but_not_an_empty_full_tier(monkeypatch):
+    ids = ["tests/test_a.py::test_x"]
+    monkeypatch.setattr(ci_tiers, "load_table", lambda *a, **k: {"tests": {}})
+    def fake(marker, allow_empty=False):
+        if marker == "slow":
+            if not allow_empty:
+                raise SystemExit("empty")
+            return []
+        return ids
+    monkeypatch.setattr(dev_checks, "collect", fake)
+    assert dev_checks.verify() == 0
+    monkeypatch.setattr(dev_checks, "collect", lambda marker, allow_empty=False: (_ for _ in ()).throw(SystemExit("empty")) if marker is None else ids)
+    with pytest.raises(SystemExit):
+        dev_checks.verify()
