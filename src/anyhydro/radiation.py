@@ -1736,6 +1736,13 @@ def _kernel_from_arrays(
             "radiation passivity are not established. duration_over_spacing_period "
             "is a legacy spacing indicator, not an alias recurrence criterion."
         )
+    # symmetrised BEFORE the A_inf calibration: the band-consistent A_inf is proved against the carried kernel
+    if settings.kernel_symmetrisation != KERNEL_SYMMETRISATION_NONE:
+        kernel, provenance = _symmetrise_kernel(kernel, settings, provenance)
+        assumptions.append(
+            "kernel_symmetrisation=symmetric_part: each kernel time sample replaced by (K + K^T)/2; the removed skew "
+            "is recorded in the provenance and bounded; the symmetric part is the kernel the A_inf calibration, the "
+            "diagnostics' source data and every later verification refer to (a declared modelling approximation)")
     if settings.a_inf_policy == A_INF_BAND_CONSISTENT:
         cal = (omegas >= settings.a_inf_calibration_min) & (omegas <= settings.a_inf_calibration_max)
         _require(int(np.count_nonzero(cal)) >= 2,
@@ -1779,12 +1786,6 @@ def _kernel_from_arrays(
             "qualification, no other validation loosened)"
         )
 
-    if settings.kernel_symmetrisation != KERNEL_SYMMETRISATION_NONE:
-        kernel, provenance = _symmetrise_kernel(kernel, settings, provenance)
-        assumptions.append(
-            "kernel_symmetrisation=symmetric_part: each kernel time sample replaced by (K + K^T)/2; the removed skew "
-            "is recorded in the provenance and bounded; added_mass_infinite and the diagnostics are those of the "
-            "unsymmetrised construction (a declared modelling approximation)")
     return RadiationKernel(
         settings=settings,
         time=t,

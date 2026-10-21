@@ -129,3 +129,15 @@ def test_per_sample_ratio_can_exceed_bound_while_whole_kernel_skew_is_small():
 def test_symmetrised_kernel_is_still_passive_on_the_relative_basis():
     _, on = _pair()
     assert on.diagnostics.passivity_violations == 0
+
+
+def test_band_consistent_a_inf_is_calibrated_against_the_symmetrised_kernel():
+    """Codex review round 1: A_inf must be proved against the kernel the artifact actually carries."""
+    from test_radiation_tolerance_basis import ORACLE_OMEGAS
+    band = dict(a_inf_policy="band_consistent", a_inf_calibration_min=float(ORACLE_OMEGAS[2]),
+                a_inf_calibration_max=float(ORACLE_OMEGAS[-3]))
+    added, damping, b0 = _skewed(skew=1.0e-3)
+    k = _kernel_from_samples(added, damping, b0, **REL, **SYM, **band)
+    assert np.array_equal(np.asarray(k.kernel), np.asarray(k.kernel).transpose(0, 2, 1))
+    out = rad.verify_band_consistent_added_mass_infinite(k, np.eye(N_DOF) * 50.0, ORACLE_OMEGAS, added)
+    assert np.array_equal(out, k.added_mass_infinite)
