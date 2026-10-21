@@ -249,3 +249,59 @@ def test_verify_accepts_an_empty_slow_tier_but_not_an_empty_full_tier(monkeypatc
     monkeypatch.setattr(dev_checks, "collect", lambda marker, allow_empty=False: (_ for _ in ()).throw(SystemExit("empty")) if marker is None else ids)
     with pytest.raises(SystemExit):
         dev_checks.verify()
+
+
+@pytest.mark.parametrize("content", ["", "created by tools/dev_checks.py; safe to delete\n", "dev_checks.py workdir v1 token=xyz\n"])
+def test_workdir_marker_must_have_the_runner_header_and_token(tmp_path, content):
+    (tmp_path / dev_checks.WORKDIR_MARKER).write_text(content)
+    (tmp_path / "precious.txt").write_text("x")
+    with pytest.raises(SystemExit):
+        dev_checks.prepare_workdir(tmp_path)
+    assert (tmp_path / "precious.txt").exists()
+
+
+def test_workdir_marker_is_a_random_per_directory_token(tmp_path):
+    a, b = tmp_path / "a", tmp_path / "b"
+    dev_checks.prepare_workdir(a)
+    dev_checks.prepare_workdir(b)
+    ta, tb = [(d / dev_checks.WORKDIR_MARKER).read_text() for d in (a, b)]
+    assert dev_checks.MARKER_RE.fullmatch(ta) and ta != tb
+
+
+def test_workdir_symlink_marker_is_refused(tmp_path):
+    work, outside = tmp_path / "w", tmp_path / "outside.txt"
+    dev_checks.prepare_workdir(work)
+    outside.write_text((work / dev_checks.WORKDIR_MARKER).read_text())
+    (work / dev_checks.WORKDIR_MARKER).unlink()
+    try:
+        (work / dev_checks.WORKDIR_MARKER).symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("cannot create symlinks here")
+    with pytest.raises(SystemExit):
+        dev_checks.prepare_workdir(work)
+
+
+def test_workdir_cleanup_failure_is_reported_not_ignored(monkeypatch, tmp_path):
+    work = tmp_path / "w"
+    dev_checks.prepare_workdir(work)
+    def boom(path, *a, **k):
+        assert not k.get("ignore_errors")
+        raise PermissionError("locked")
+    monkeypatch.setattr(dev_checks.shutil, "rmtree", boom)
+    with pytest.raises(SystemExit) as info:
+        dev_checks.prepare_workdir(work)
+    assert "cannot clean" in str(info.value)
+
+
+def test_verify_refuses_an_empty_fast_tier(monkeypatch):
+    ids = ["tests/test_a.py::test_x"]
+    monkeypatch.setattr(ci_tiers, "load_table", lambda *a, **k: {"tests": {}})
+    def fake(marker, allow_empty=False):
+        if marker == "not slow":
+            if not allow_empty:
+                raise SystemExit("empty")
+            return []
+        return ids if marker is None else []
+    monkeypatch.setattr(dev_checks, "collect", fake)
+    with pytest.raises(SystemExit):
+        dev_checks.verify()

@@ -25,3 +25,4 @@ python tools/dev_checks.py --tier full     # every test of the selection; about 
   `python -m pytest tests/test_x.py --basetemp=<dir>` with `PYTHONPATH=src` for the full (non-portable) modules.
 - Known limit: a timeout kills the job's whole process tree. On Windows a process that a finished job left running
   in the background is not killed (no process group to signal; a Job Object would be needed); on Linux it is.
+- Known limit: `--workdir` deletion checks path and marker but is not race-free against a concurrent writer of the same path.

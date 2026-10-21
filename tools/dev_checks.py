@@ -19,6 +19,9 @@ import argparse
 import json
 import math
 import os
+import re
+import secrets
+import stat
 import shutil
 import subprocess
 import sys
@@ -258,6 +261,19 @@ def check_shards(count: int) -> int:
 
 
 WORKDIR_MARKER = ".dev_checks_workdir"
+MARKER_HEADER = "dev_checks.py workdir v1 token="
+MARKER_RE = re.compile(re.escape(MARKER_HEADER) + r"[0-9a-f]{32}\n")
+
+
+def _marker_ok(workdir: Path) -> bool:
+    """The marker is a regular file (not a link) holding the fixed header and a random per-directory token."""
+    marker = workdir / WORKDIR_MARKER
+    try:
+        if not stat.S_ISREG(marker.lstat().st_mode):
+            return False
+        return MARKER_RE.fullmatch(marker.read_text(encoding="utf-8")) is not None
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 def _is_link(path: Path) -> bool:
@@ -281,12 +297,17 @@ def prepare_workdir(arg: Path) -> Path:
         if not workdir.is_dir():
             sys.exit(f"refusing --workdir {workdir}: not a directory")
         if any(workdir.iterdir()):
-            if not (workdir / WORKDIR_MARKER).is_file():
+            if not _marker_ok(workdir):
                 sys.exit(f"refusing --workdir {workdir}: not empty and not created by this runner (no {WORKDIR_MARKER}); "
                          "remove it yourself or choose another directory")
-            shutil.rmtree(workdir)
+            try:
+                shutil.rmtree(workdir)
+            except OSError as exc:
+                sys.exit(f"cannot clean --workdir {workdir}: {exc}; remove it yourself (nothing was run)")
+            if workdir.exists():
+                sys.exit(f"cannot clean --workdir {workdir}: it still exists after cleanup (nothing was run)")
     (workdir / "tmp").mkdir(parents=True)
-    (workdir / WORKDIR_MARKER).write_text("created by tools/dev_checks.py; safe to delete\n", encoding="utf-8")
+    (workdir / WORKDIR_MARKER).write_text(MARKER_HEADER + secrets.token_hex(16) + "\n", encoding="utf-8")
     return workdir
 
 
