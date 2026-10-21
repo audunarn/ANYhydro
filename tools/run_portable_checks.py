@@ -36,6 +36,7 @@ BLOCKED_OPTIONAL_PACKAGES = ("anyloads", "anyfileio", "capytaine", "OrcFxAPI")
 # declared base dependencies; backend-dependent paths are mock-only.
 PORTABLE_TEST_MODULES = (
     "test_artifact_bound_panel_profile",
+    "test_basis_sym_golden",
     "test_backends",
     "test_cache_identity_repair",
     "test_check_energy_artifact",
@@ -54,6 +55,7 @@ PORTABLE_TEST_MODULES = (
     "test_hashing",
     "test_hydrostatic_contract",
     "test_imports",
+    "test_kernel_symmetrisation",
     "test_linux_owned_process",
     "test_mean_drift",
     "test_orcaflex_export",
@@ -89,6 +91,7 @@ PORTABLE_TEST_MODULES = (
     "test_thin_sheet_kernels",
     "test_transform",
     "test_vessel_study",
+    "test_vessel_study_basis",
 )
 
 # Test modules excluded from portable base CI, each with its concrete

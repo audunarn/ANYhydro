@@ -84,6 +84,9 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_radiation_full_block | band-consistent A_inf, body-diagonal tail and full-block reconstruction criteria |
 | test_radiation_high_tail | declared power-law high-frequency kernel tail |
 | test_radiation_long_kernel | long radiation kernel quadrature |
+| test_basis_sym_golden | hash guard: absolute-basis, unsymmetrised recipes/settings keep their hashes |
+| test_kernel_symmetrisation | declared producer-side kernel symmetrisation: symmetric part, recorded bounded skew, hash binding, fail-closed record |
+| test_vessel_study_basis | tolerance basis and kernel symmetrisation in the vessel-study recipe (the Capytaine end-to-end tests skip without the extra) |
 | test_radiation_tolerance_basis | absolute vs per-sample relative kernel tolerance basis and its diagnostics binding |
 | test_radiation_oscillatory | oscillatory radiation quadrature |
 | test_radiation_parent_review | radiation parent review contracts |
