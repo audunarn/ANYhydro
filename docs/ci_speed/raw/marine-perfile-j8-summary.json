@@ -1,0 +1,606 @@
+{
+ "total_wall": 455.9,
+ "jobs": 8,
+ "files": [
+  {
+   "file": "test_adoption_jobs.py",
+   "wall": 7.8,
+   "rc": 0,
+   "tail": "25 passed in 2.88s"
+  },
+  {
+   "file": "test_adoption_qt.py",
+   "wall": 14.0,
+   "rc": 1,
+   "tail": "5 failed, 2 passed in 9.27s"
+  },
+  {
+   "file": "test_application_surfaces.py",
+   "wall": 7.6,
+   "rc": 0,
+   "tail": "19 passed in 2.25s"
+  },
+  {
+   "file": "test_application_surfaces_qt.py",
+   "wall": 8.0,
+   "rc": 0,
+   "tail": "6 passed in 2.46s"
+  },
+  {
+   "file": "test_assessment_jobs.py",
+   "wall": 12.6,
+   "rc": 1,
+   "tail": "10 failed, 11 passed in 7.43s"
+  },
+  {
+   "file": "test_calculated_wave_example.py",
+   "wall": 7.5,
+   "rc": 1,
+   "tail": "2 failed, 5 passed in 2.19s"
+  },
+  {
+   "file": "test_canvas_renderer.py",
+   "wall": 6.4,
+   "rc": 0,
+   "tail": "8 passed in 1.45s"
+  },
+  {
+   "file": "test_continuous_contact_app.py",
+   "wall": 5.1,
+   "rc": 0,
+   "tail": "12 passed in 0.42s"
+  },
+  {
+   "file": "test_derived_import.py",
+   "wall": 23.4,
+   "rc": 1,
+   "tail": "1 failed, 32 passed in 17.78s"
+  },
+  {
+   "file": "test_development_status.py",
+   "wall": 5.2,
+   "rc": 0,
+   "tail": "31 passed in 0.25s"
+  },
+  {
+   "file": "test_domain.py",
+   "wall": 5.2,
+   "rc": 0,
+   "tail": "11 passed in 0.10s"
+  },
+  {
+   "file": "test_equilibrium_transition.py",
+   "wall": 7.5,
+   "rc": 0,
+   "tail": "29 passed in 2.30s"
+  },
+  {
+   "file": "test_gui_integration.py",
+   "wall": 5.7,
+   "rc": 0,
+   "tail": "4 passed in 0.68s"
+  },
+  {
+   "file": "test_gui_launcher.py",
+   "wall": 5.5,
+   "rc": 0,
+   "tail": "14 passed in 0.77s"
+  },
+  {
+   "file": "test_gui_linear.py",
+   "wall": 11.1,
+   "rc": 0,
+   "tail": "4 passed in 6.77s"
+  },
+  {
+   "file": "test_hams_jobs.py",
+   "wall": 6.8,
+   "rc": 1,
+   "tail": "33 errors in 2.36s"
+  },
+  {
+   "file": "test_hams_wave_replay.py",
+   "wall": 9.9,
+   "rc": 0,
+   "tail": "30 passed in 5.14s"
+  },
+  {
+   "file": "test_harmonic_fit.py",
+   "wall": 4.0,
+   "rc": 0,
+   "tail": "9 passed in 0.07s"
+  },
+  {
+   "file": "test_hash_stale.py",
+   "wall": 4.2,
+   "rc": 0,
+   "tail": "5 passed in 0.21s"
+  },
+  {
+   "file": "test_headless.py",
+   "wall": 8.4,
+   "rc": 0,
+   "tail": "7 passed in 4.38s"
+  },
+  {
+   "file": "test_hydro_bridge.py",
+   "wall": 13.0,
+   "rc": 1,
+   "tail": "1 failed, 47 passed in 8.17s"
+  },
+  {
+   "file": "test_hydro_decay_refinement.py",
+   "wall": 19.9,
+   "rc": 0,
+   "tail": "20 passed in 15.56s"
+  },
+  {
+   "file": "test_hydro_frame_admission.py",
+   "wall": 6.3,
+   "rc": 0,
+   "tail": "3 passed in 1.72s"
+  },
+  {
+   "file": "test_hydro_full_block_options.py",
+   "wall": 4.1,
+   "rc": 0,
+   "tail": "6 passed in 0.12s"
+  },
+  {
+   "file": "test_hydro_rigid_cli.py",
+   "wall": 9.7,
+   "rc": 0,
+   "tail": "4 passed in 5.00s"
+  },
+  {
+   "file": "test_hydro_rigid_import.py",
+   "wall": 11.0,
+   "rc": 0,
+   "tail": "35 passed in 6.34s"
+  },
+  {
+   "file": "test_hydro_rigid_irregular.py",
+   "wall": 5.5,
+   "rc": 5,
+   "tail": "1 skipped in 1.05s"
+  },
+  {
+   "file": "test_hydro_rigid_lid.py",
+   "wall": 9.5,
+   "rc": 0,
+   "tail": "22 passed in 4.71s"
+  },
+  {
+   "file": "test_hydro_rigid_references.py",
+   "wall": 10.1,
+   "rc": 0,
+   "tail": "6 passed in 5.36s"
+  },
+  {
+   "file": "test_hydro_rigid_service.py",
+   "wall": 10.8,
+   "rc": 0,
+   "tail": "11 passed in 6.49s"
+  },
+  {
+   "file": "test_jobs_qprocess.py",
+   "wall": 5.9,
+   "rc": 0,
+   "tail": "5 passed in 1.91s"
+  },
+  {
+   "file": "test_lid_longrun.py",
+   "wall": 11.7,
+   "rc": 0,
+   "tail": "13 passed in 7.39s"
+  },
+  {
+   "file": "test_line_equilibrium_replay.py",
+   "wall": 4.8,
+   "rc": 0,
+   "tail": "29 passed in 0.95s"
+  },
+  {
+   "file": "test_line_equilibrium_replay_qt.py",
+   "wall": 4.4,
+   "rc": 0,
+   "tail": "1 passed in 0.50s"
+  },
+  {
+   "file": "test_line_hydro_app.py",
+   "wall": 5.0,
+   "rc": 1,
+   "tail": "2 failed, 12 passed, 34 errors in 1.08s"
+  },
+  {
+   "file": "test_line_hydro_app_qt.py",
+   "wall": 7.1,
+   "rc": 1,
+   "tail": "1 failed, 1 error in 3.11s"
+  },
+  {
+   "file": "test_linear_assessment.py",
+   "wall": 13.9,
+   "rc": 1,
+   "tail": "14 failed, 31 passed in 9.35s"
+  },
+  {
+   "file": "test_linear_fd.py",
+   "wall": 8.2,
+   "rc": 0,
+   "tail": "24 passed in 4.08s"
+  },
+  {
+   "file": "test_linear_inputs.py",
+   "wall": 4.2,
+   "rc": 0,
+   "tail": "12 passed in 0.23s"
+  },
+  {
+   "file": "test_linear_legacy_fixtures.py",
+   "wall": 7.6,
+   "rc": 1,
+   "tail": "4 failed, 5 passed in 2.96s"
+  },
+  {
+   "file": "test_linear_persistence.py",
+   "wall": 4.3,
+   "rc": 0,
+   "tail": "5 passed in 0.28s"
+  },
+  {
+   "file": "test_linear_resume_contracts.py",
+   "wall": 4.3,
+   "rc": 0,
+   "tail": "7 passed in 0.28s"
+  },
+  {
+   "file": "test_linear_review.py",
+   "wall": 4.3,
+   "rc": 0,
+   "tail": "5 passed in 0.25s"
+  },
+  {
+   "file": "test_linear_rigid_layout.py",
+   "wall": 4.6,
+   "rc": 0,
+   "tail": "23 passed, 4 warnings in 0.36s"
+  },
+  {
+   "file": "test_linear_rigid_replay_qt.py",
+   "wall": 4.7,
+   "rc": 0,
+   "tail": "1 passed in 0.53s"
+  },
+  {
+   "file": "test_linear_rigid_run.py",
+   "wall": 22.4,
+   "rc": 0,
+   "tail": "37 passed in 18.24s"
+  },
+  {
+   "file": "test_linear_service.py",
+   "wall": 4.3,
+   "rc": 0,
+   "tail": "11 passed in 0.29s"
+  },
+  {
+   "file": "test_linux_hams_admission.py",
+   "wall": 4.0,
+   "rc": 0,
+   "tail": "11 skipped in 0.12s"
+  },
+  {
+   "file": "test_mass_properties.py",
+   "wall": 4.0,
+   "rc": 0,
+   "tail": "11 passed in 0.26s"
+  },
+  {
+   "file": "test_mooring_app.py",
+   "wall": 4.8,
+   "rc": 0,
+   "tail": "26 passed in 0.89s"
+  },
+  {
+   "file": "test_mooring_app_qt.py",
+   "wall": 4.9,
+   "rc": 0,
+   "tail": "1 passed in 1.03s"
+  },
+  {
+   "file": "test_mooring_contact_app.py",
+   "wall": 5.3,
+   "rc": 1,
+   "tail": "1 failed, 44 passed in 1.59s"
+  },
+  {
+   "file": "test_mooring_contact_app_qt.py",
+   "wall": 7.5,
+   "rc": 0,
+   "tail": "3 passed in 3.60s"
+  },
+  {
+   "file": "test_native_boundaries.py",
+   "wall": 3.9,
+   "rc": 0,
+   "tail": "15 passed in 0.23s"
+  },
+  {
+   "file": "test_native_fluid_integration.py",
+   "wall": 7.1,
+   "rc": 0,
+   "tail": "19 passed, 10 warnings in 3.25s"
+  },
+  {
+   "file": "test_native_inputs.py",
+   "wall": 4.2,
+   "rc": 0,
+   "tail": "22 passed in 0.46s"
+  },
+  {
+   "file": "test_native_jobs.py",
+   "wall": 4.2,
+   "rc": 0,
+   "tail": "22 passed in 0.44s"
+  },
+  {
+   "file": "test_native_morison_app.py",
+   "wall": 7.1,
+   "rc": 1,
+   "tail": "4 failed, 12 passed in 3.22s"
+  },
+  {
+   "file": "test_native_qt.py",
+   "wall": 11.4,
+   "rc": 1,
+   "tail": "1 failed, 12 passed in 7.42s"
+  },
+  {
+   "file": "test_persistence.py",
+   "wall": 3.9,
+   "rc": 0,
+   "tail": "20 passed, 1 skipped in 0.29s"
+  },
+  {
+   "file": "test_prehistory.py",
+   "wall": 4.7,
+   "rc": 0,
+   "tail": "7 passed in 0.89s"
+  },
+  {
+   "file": "test_project_lifecycle.py",
+   "wall": 4.0,
+   "rc": 0,
+   "tail": "11 passed in 0.35s"
+  },
+  {
+   "file": "test_qt_assessment.py",
+   "wall": 5.1,
+   "rc": 1,
+   "tail": "9 errors in 1.28s"
+  },
+  {
+   "file": "test_qt_development_status.py",
+   "wall": 4.6,
+   "rc": 0,
+   "tail": "8 passed in 0.64s"
+  },
+  {
+   "file": "test_qt_layout.py",
+   "wall": 5.9,
+   "rc": 0,
+   "tail": "5 passed in 1.59s"
+  },
+  {
+   "file": "test_qt_mass_properties.py",
+   "wall": 4.3,
+   "rc": 0,
+   "tail": "1 passed in 0.40s"
+  },
+  {
+   "file": "test_qt_shell.py",
+   "wall": 5.3,
+   "rc": 0,
+   "tail": "9 passed in 1.38s"
+  },
+  {
+   "file": "test_qt_startup.py",
+   "wall": 5.0,
+   "rc": 0,
+   "tail": "7 passed in 1.13s"
+  },
+  {
+   "file": "test_qt_viewport.py",
+   "wall": 6.7,
+   "rc": 0,
+   "tail": "14 passed in 2.38s"
+  },
+  {
+   "file": "test_qt_workspace_shell.py",
+   "wall": 6.5,
+   "rc": 0,
+   "tail": "11 passed, 1 skipped in 2.29s"
+  },
+  {
+   "file": "test_rao_case.py",
+   "wall": 3.9,
+   "rc": 0,
+   "tail": "32 passed in 0.11s"
+  },
+  {
+   "file": "test_rao_cli.py",
+   "wall": 4.5,
+   "rc": 1,
+   "tail": "1 failed in 0.64s"
+  },
+  {
+   "file": "test_rao_drag.py",
+   "wall": 4.5,
+   "rc": 1,
+   "tail": "2 failed in 0.68s"
+  },
+  {
+   "file": "test_rao_extraction.py",
+   "wall": 78.5,
+   "rc": 0,
+   "tail": "2 passed in 75.09s (0:01:15)"
+  },
+  {
+   "file": "test_rao_linearize.py",
+   "wall": 4.3,
+   "rc": 0,
+   "tail": "5 passed in 0.42s"
+  },
+  {
+   "file": "test_rao_mooring.py",
+   "wall": 390.7,
+   "rc": 0,
+   "tail": "4 passed in 387.03s (0:06:27)"
+  },
+  {
+   "file": "test_rao_morison.py",
+   "wall": 4.4,
+   "rc": 1,
+   "tail": "2 failed in 0.59s"
+  },
+  {
+   "file": "test_rao_panel_qt.py",
+   "wall": 7.5,
+   "rc": 1,
+   "tail": "2 failed, 4 passed in 3.60s"
+  },
+  {
+   "file": "test_rao_potential_flow.py",
+   "wall": 5.8,
+   "rc": 1,
+   "tail": "1 failed, 2 passed in 1.65s"
+  },
+  {
+   "file": "test_rao_report.py",
+   "wall": 4.6,
+   "rc": 1,
+   "tail": "2 failed in 0.71s"
+  },
+  {
+   "file": "test_rao_review_fixes.py",
+   "wall": 100.1,
+   "rc": 1,
+   "tail": "2 failed, 32 passed in 96.20s (0:01:36)"
+  },
+  {
+   "file": "test_rao_view.py",
+   "wall": 3.8,
+   "rc": 0,
+   "tail": "12 passed in 0.07s"
+  },
+  {
+   "file": "test_reference_comparison.py",
+   "wall": 5.3,
+   "rc": 0,
+   "tail": "37 passed in 1.62s"
+  },
+  {
+   "file": "test_reference_view_qt.py",
+   "wall": 7.2,
+   "rc": 1,
+   "tail": "4 failed, 12 passed in 2.85s"
+  },
+  {
+   "file": "test_regular_wave_example_qt.py",
+   "wall": 4.9,
+   "rc": 1,
+   "tail": "1 failed, 2 passed in 1.20s"
+  },
+  {
+   "file": "test_result_matched_waves.py",
+   "wall": 8.7,
+   "rc": 1,
+   "tail": "5 failed, 15 passed in 4.28s"
+  },
+  {
+   "file": "test_review_contracts.py",
+   "wall": 3.8,
+   "rc": 0,
+   "tail": "5 passed in 0.19s"
+  },
+  {
+   "file": "test_shared_sea_state_app.py",
+   "wall": 5.2,
+   "rc": 1,
+   "tail": "7 failed, 9 passed in 1.43s"
+  },
+  {
+   "file": "test_startup_example.py",
+   "wall": 4.4,
+   "rc": 0,
+   "tail": "4 passed in 0.58s"
+  },
+  {
+   "file": "test_static_app.py",
+   "wall": 9.8,
+   "rc": 0,
+   "tail": "25 passed in 6.14s"
+  },
+  {
+   "file": "test_static_app_qt.py",
+   "wall": 14.3,
+   "rc": 0,
+   "tail": "8 passed in 10.55s"
+  },
+  {
+   "file": "test_submerged_lid.py",
+   "wall": 6.0,
+   "rc": 0,
+   "tail": "10 passed in 1.84s"
+  },
+  {
+   "file": "test_surface_admission.py",
+   "wall": 5.5,
+   "rc": 0,
+   "tail": "4 passed in 1.41s"
+  },
+  {
+   "file": "test_surface_editor_qt.py",
+   "wall": 8.5,
+   "rc": 0,
+   "tail": "33 passed in 3.99s"
+  },
+  {
+   "file": "test_synthetic.py",
+   "wall": 3.8,
+   "rc": 0,
+   "tail": "6 passed in 0.18s"
+  },
+  {
+   "file": "test_verify_installed_application.py",
+   "wall": 4.5,
+   "rc": 1,
+   "tail": "2 failed, 32 passed in 0.79s"
+  },
+  {
+   "file": "test_verify_qt_desktop.py",
+   "wall": 5.6,
+   "rc": 0,
+   "tail": "39 passed in 1.38s"
+  },
+  {
+   "file": "test_w5_workflow.py",
+   "wall": 27.0,
+   "rc": 0,
+   "tail": "41 passed in 23.11s"
+  },
+  {
+   "file": "test_wave_preview.py",
+   "wall": 6.5,
+   "rc": 1,
+   "tail": "10 failed, 3 passed in 2.30s"
+  },
+  {
+   "file": "test_worker_linear.py",
+   "wall": 10.4,
+   "rc": 0,
+   "tail": "7 passed in 6.85s"
+  }
+ ]
+}

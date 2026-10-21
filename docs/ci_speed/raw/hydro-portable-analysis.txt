@@ -1,0 +1,57 @@
+tests 1352 sum test time 176.9
+top 30 tests
+   4.30 tests.test_check_energy_artifact::test_nonfinite_mean_power_refused_raw_preserved[-inf]
+   4.12 tests.test_check_energy_artifact::test_nonfinite_mean_power_refused_raw_preserved[inf]
+   3.82 tests.test_check_energy_artifact::test_dof_name_mutation_refused_no_completed_promotion
+   3.75 tests.test_check_energy_artifact::test_nonfinite_mean_power_refused_raw_preserved[nan]
+   3.37 tests.test_check_energy_artifact::test_full_mocked_energy_point_mismatching_hams
+   3.29 tests.test_check_energy_artifact::test_aggregate_unresolved_refuses_promotion
+   3.09 tests.test_check_energy_artifact::test_mean_power_only_mismatch_fails_not_unresolved
+   3.03 tests.test_check_energy_artifact::test_matching_blocks_and_work_complete_unqualified
+   3.01 tests.test_check_energy_artifact::test_negative_candidate_power_stops_source_admission
+   2.66 tests.test_check_energy_artifact::test_mutated_helper_module_refused_before_consume
+   2.31 tests.test_check_energy_artifact::test_mutated_reference_input_bytes_refused
+   2.22 tests.test_thin_sheet_galerkin::test_ts2_thin_disc_heave_added_mass_converges_to_8_over_3
+   2.18 tests.test_check_operator_artifact::test_fixed_override_budget_exhausted
+   2.17 tests.test_check_operator_artifact::test_existing_output_refused
+   2.15 tests.test_check_operator_artifact::test_preconsumed_admission_refused
+   2.15 tests.test_check_energy_artifact::test_mutated_hams_report_file_refused
+   2.14 tests.test_check_operator_artifact::test_wrong_effective_settings_refused
+   2.13 tests.test_check_energy_artifact::test_nonfinite_batch_preserves_raw_evidence
+   2.13 tests.test_check_operator_artifact::test_default_prony_fit_refused_before_body
+   2.13 tests.test_check_energy_artifact::test_criteria_native_future_mismatch_refused
+   2.12 tests.test_check_operator_artifact::test_body_count_not_two_refused
+   2.11 tests.test_check_energy_artifact::test_controls_unit_conversion_mismatch_refused
+   2.09 tests.test_check_operator_artifact::test_successful_mocked_probe
+   2.09 tests.test_check_energy_artifact::test_intent_hams_power_mismatch_refused
+   2.08 tests.test_check_energy_artifact::test_registration_controls_mismatch_refused
+   2.08 tests.test_check_operator_artifact::test_f32_extension_mismatch_refused
+   2.07 tests.test_check_energy_artifact::test_admission_helper_pin_missing_or_mutated_refused_before_consume
+   2.07 tests.test_check_energy_artifact::test_criteria_format_mismatch_refused_before_consume
+   2.06 tests.test_check_operator_artifact::test_threadpool_not_one_refused
+   2.06 tests.test_check_operator_artifact::test_installed_module_hash_mismatch_refused
+top 20 files
+  82.20 tests.test_check_energy_artifact
+  33.39 tests.test_check_operator_artifact
+  10.32 tests.test_panel_accuracy_reference
+   5.41 tests.test_saved_panel_diagnostics
+   4.92 tests.test_prony_fit
+   4.08 tests.test_artifact_bound_panel_profile
+   4.03 tests.test_source_study.TestExecute
+   3.06 tests.test_thin_sheet_galerkin
+   2.96 tests.test_source_study.TestCLIGate
+   2.27 tests.test_orcaflex_export
+   1.89 tests.test_thin_sheet_kernels
+   1.77 tests.test_derived_operators
+   1.33 tests.test_source_study.TestLoadAdjudicate
+   1.25 tests.test_radiation_full_block
+   1.09 tests.test_radiation_tolerance_basis
+   1.03 tests.test_retained_panel_pairs
+   0.94 tests.test_owned_process
+   0.90 tests.test_source_study.TestGeometryInventoryBinding
+   0.90 tests.test_far_field_weak_modes
+   0.89 tests.test_hams_reference
+top 10 = 34.4 s
+top 30 = 77.0 s
+top 50 = 116.0 s
+<0.1s tests: 1166, 18.7 s

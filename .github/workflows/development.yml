@@ -1,0 +1,45 @@
+name: Neutral hydrodynamic contracts (development)
+
+# Development path: the fast tier (tests not recorded as slow in reports/ci/durations.json) on two cells, on pull
+# requests and on pushes to main.  The full suite on all four cells runs in ci.yml (dispatch, weekly, pull
+# requests to main).  See docs/TESTING.md.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: development-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fast:
+    name: Fast tier (${{ matrix.os }}, Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, python: '3.13'}
+          - {os: windows-latest, python: '3.11'}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      NUMEXPR_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install '.[dev]'
+      - name: Tiers partition the selection
+        run: python tools/dev_checks.py --verify
+      - name: Fast tier (tools/run_portable_checks.py selection, parallel jobs)
+        run: python tools/dev_checks.py --jobs 2
+      - name: No unmarked slow test
+        run: python tools/ci_tiers.py guard .pytest-dev --limit 4
+      - run: python -m build --wheel

@@ -60,6 +60,7 @@ optional/native execution fails loudly instead of silently passing locally.
 | test_cache_identity_repair | cache identity repair (mocked solve, no real backend) |
 | test_check_energy_artifact | mocked energy artifact route |
 | test_check_operator_artifact | mocked operator probe route |
+| test_ci_tiers | tier and parallel-job tooling (tools/ci_tiers.py, tools/dev_checks.py) |
 | test_coefficient_frames | coefficient frames and reference maps |
 | test_derived_operators | derived operators and admission/refusal |
 | test_execution_limits | execution limit validation (mocked solves) |

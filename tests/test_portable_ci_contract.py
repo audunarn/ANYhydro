@@ -94,13 +94,19 @@ def test_docs_document_the_selection_and_every_exclusion(tool):
         assert name in docs, f"docs/PORTABLE_CI.md does not document {name}"
 
 
-def test_ci_workflow_invokes_the_portable_selection():
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    assert "tools/run_portable_checks.py" in workflow
-    assert "pytest tests" not in workflow, (
-        "base CI must not collect the whole tests/ tree; excluded modules have "
-        "documented optional dependency or local fixture reasons"
-    )
+WORKFLOW_PATHS = (REPO_ROOT / ".github" / "workflows" / "ci.yml", REPO_ROOT / ".github" / "workflows" / "development.yml")
+
+
+def test_ci_workflows_invoke_the_portable_selection():
+    # both workflows run the selection through tools/dev_checks.py, whose test command is the portable runner
+    assert "run_portable_checks.py" in (REPO_ROOT / "tools" / "dev_checks.py").read_text(encoding="utf-8")
+    for path in WORKFLOW_PATHS:
+        workflow = path.read_text(encoding="utf-8")
+        assert "tools/dev_checks.py" in workflow or "tools/run_portable_checks.py" in workflow, path.name
+        assert "pytest tests" not in workflow, (
+            "base CI must not collect the whole tests/ tree; excluded modules have "
+            "documented optional dependency or local fixture reasons"
+        )
 
 
 def test_slice_selection_covers_the_allowlist_exactly(tool):

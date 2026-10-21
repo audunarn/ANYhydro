@@ -1,14 +1,44 @@
 name: Neutral hydrodynamic contracts
-on: [push, pull_request, workflow_dispatch]
+
+# Final path: every test of the portable selection (tools/run_portable_checks.py) on four cells, each in three
+# duration-balanced shards.  Runs on dispatch, weekly (Monday 03:00 UTC) and on pull requests to main; the fast
+# tier for everyday pushes is development.yml.  See docs/TESTING.md.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: final-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  completeness:
+    name: Shards cover the selection
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install '.[dev]'
+      - run: python tools/dev_checks.py --verify
+      - run: python tools/dev_checks.py --check-shards 3
   base:
+    name: Full suite (${{ matrix.os }}, Python ${{ matrix.python }}, shard ${{ matrix.shard }}/3)
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
         python: ['3.11', '3.13']
+        shard: [1, 2, 3]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       OMP_NUM_THREADS: '1'
       OPENBLAS_NUM_THREADS: '1'
@@ -19,6 +49,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: python -m pip install '.[dev]'
-      - run: python tools/run_portable_checks.py
+      - name: Full tier shard (runs tools/run_portable_checks.py selection)
+        run: python tools/dev_checks.py --tier full --shard ${{ matrix.shard }}/3 --jobs 2
       - run: python -m build --wheel
+        if: matrix.shard == 1

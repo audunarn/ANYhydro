@@ -40,6 +40,7 @@ PORTABLE_TEST_MODULES = (
     "test_cache_identity_repair",
     "test_check_energy_artifact",
     "test_check_operator_artifact",
+    "test_ci_tiers",
     "test_coefficient_frames",
     "test_derived_operators",
     "test_execution_limits",
