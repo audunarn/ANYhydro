@@ -533,7 +533,6 @@ class RadiationSettings:
         cal_dt = self.a_inf_calibration_dt
         n_time = int(round((self.n_time - 1) * self.dt / cal_dt)) + 1
         return replace(self, dt=cal_dt, n_time=n_time, a_inf_policy=A_INF_COMPUTED,
-                       kernel_symmetrisation=KERNEL_SYMMETRISATION_NONE, kernel_skew_bound=None,
                        a_inf_calibration_min=None, a_inf_calibration_max=None,
                        a_inf_calibration_dt=None)
 
@@ -1102,7 +1101,8 @@ def _pairwise_skew_over_peak(kernel: np.ndarray) -> float:
     a zero diagonal peak has no scale: infinity (refused by any bound)."""
     skew = 0.5 * np.abs(kernel - kernel.transpose(0, 2, 1)).max(axis=0)
     peak = np.abs(np.diagonal(kernel, axis1=1, axis2=2)).max(axis=0)
-    scale = np.sqrt(np.outer(peak, peak))
+    root = np.sqrt(peak)                       # sqrt(a)*sqrt(b): no overflow/underflow of the product
+    scale = np.outer(root, root)
     with np.errstate(divide="ignore", invalid="ignore"):
         ratio = np.where(skew > 0.0, np.where(scale > 0.0, skew / scale, np.inf), 0.0)
     return float(ratio.max()) if ratio.size else 0.0

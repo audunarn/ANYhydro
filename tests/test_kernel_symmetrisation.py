@@ -141,3 +141,34 @@ def test_band_consistent_a_inf_is_calibrated_against_the_symmetrised_kernel():
     assert np.array_equal(np.asarray(k.kernel), np.asarray(k.kernel).transpose(0, 2, 1))
     out = rad.verify_band_consistent_added_mass_infinite(k, np.eye(N_DOF) * 50.0, ORACLE_OMEGAS, added)
     assert np.array_equal(out, k.added_mass_infinite)
+
+
+def test_paired_grid_calibration_uses_the_symmetrised_kernel():
+    """Codex review round 2: the A_inf calibrated on a separate grid must equal the one a plain kernel at that
+    step gets (both symmetrised), otherwise paired time steps do not share one A_inf."""
+    from test_radiation_tolerance_basis import ORACLE_OMEGAS
+    from test_radiation import make_oracle_settings
+    added, damping, b0 = _skewed(skew=1.0e-3)
+    keys = tuple(f"body{i // 6}::dof{i % 6}" for i in range(N_DOF))
+    bodies = tuple(f"body{i}" for i in range(N_DOF // 6))
+    band = dict(a_inf_policy="band_consistent", a_inf_calibration_min=float(ORACLE_OMEGAS[2]),
+                a_inf_calibration_max=float(ORACLE_OMEGAS[-3]))
+    base = make_oracle_settings(zero_frequency_damping=b0, **REL, **SYM, **band)
+
+    def build(settings, provenance):
+        return rad._kernel_from_arrays(omegas=ORACLE_OMEGAS, added_mass=added, damping=damping,
+                                       a_inf=np.eye(N_DOF) * 50.0, dof_keys=keys, body_ids=bodies,
+                                       settings=settings, provenance=provenance)
+
+    fine = build(base, {"source": "test"})
+    coarse_settings = dataclasses.replace(base, dt=2 * base.dt, n_time=(base.n_time - 1) // 2 + 1,
+                                          a_inf_calibration_dt=base.dt)
+    coarse = build(coarse_settings, {"source_kind": "derived_operators", "derived_content_hash": "x",
+                                     "a_inf_calibration_dt": base.dt})
+    assert np.array_equal(coarse.added_mass_infinite, fine.added_mass_infinite)
+
+
+@pytest.mark.parametrize("factor", [1.0, 1.0e160, 1.0e-160, 1.0e300])
+def test_pairwise_skew_metric_is_unit_invariant_and_overflow_safe(factor):
+    K = np.array([[[1.0, 0.1], [-0.1, 1.0]]]) * factor
+    assert rad._pairwise_skew_over_peak(K) == pytest.approx(0.1, rel=1e-12)
