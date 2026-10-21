@@ -416,3 +416,17 @@ def test_raw_full_block_route_enforces_band_consistent_calibration_safeguards():
     above = rad.reconstruction_criteria_from_dict(dict(FULL_BLOCK, omega_min=float(OMEGAS[3])))
     rep = rad.compare_reconstruction(k, ds, above)
     assert rep.a_inf_difference is not None
+
+
+def test_symmetrised_paired_derived_kernels_share_and_prove_one_a_inf(tmp_path):
+    """symmetric_part on the derived-operator route: record present, paired steps share A_inf, verifier proves both,
+    save/load keeps the hash."""
+    ds, der, coarse, fine = _paired_derived_kernels(kernel_symmetrisation="symmetric_part", kernel_skew_bound=1e-2)
+    np.testing.assert_array_equal(coarse.added_mass_infinite, fine.added_mass_infinite)
+    for k in (coarse, fine):
+        assert k.provenance["kernel_symmetrisation"]["skew_bound"] == 1e-2
+        out = rad.verify_band_consistent_added_mass_infinite(
+            k, der.derived_added_mass_infinite, der.omegas, der.derived_added_mass, calibration_source=der)
+        np.testing.assert_array_equal(out, k.added_mass_infinite)
+    rad.save_radiation_kernel(coarse, tmp_path / "c.nc")
+    assert rad.load_radiation_kernel(tmp_path / "c.nc").content_hash() == coarse.content_hash()
