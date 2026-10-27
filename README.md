@@ -260,3 +260,11 @@ Transport tests use declared fixture arrays and confer no scientific acceptance.
 Development synthesis from shared saved ANYloads realizations is available through the optional sea-state extra: [contract and examples](docs/SEA_STATE.md). This preserves source status and does not confer source admission.
 
 Pinned radiation reference preparation and strict coupled output parsing: [HAMS reference tooling](docs/hams-reference.md). Development only; no solver is launched and W7 is not accepted.
+
+## Licensing
+
+From the Apache transition release onward, original ANYhydro source is distributed under the Apache License, Version 2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)). Previously published MPL-2.0 revisions retain the rights granted with those revisions; the licence change is prospective and does not revoke earlier permissions.
+
+This is a separate project from Capytaine. Capytaine 3.x is an optional dependency independently licensed by its maintainers under Apache-2.0, not source code owned by ANYhydro. Other optional dependencies, third-party sources, data, and native executables retain their own terms. See [licensing and provenance](docs/LICENSING.md).
+
+The Apache-2.0 grant covers the original ANYhydro code, including optional in-house numerical methods (such as thin-sheet panels and Green-function corrections), not only the neutral adapter. It does not grant rights to third-party software, reference data or trademarks.
