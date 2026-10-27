@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Isolated stdlib Linux session guard. Not an arbitrary public launcher.
 
 The parent starts this script with -I, an inherited private socket and an exact
