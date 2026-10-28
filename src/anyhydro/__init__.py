@@ -391,3 +391,26 @@ __all__ += ["ARTIFACT_BOUND_PANEL_PROFILE_FORMAT", "ArtifactBoundPanelProfile"]
 from .reciprocity import (RECIPROCITY_WARNING, ReciprocityWarning, dataset_reciprocity,  # noqa: E402
                           reciprocity_diagnostic)
 __all__ += ["RECIPROCITY_WARNING", "ReciprocityWarning", "dataset_reciprocity", "reciprocity_diagnostic"]
+from .regular_wave_pressure import RegularWavePressure, solve_regular_wave_pressure
+__all__ += ['RegularWavePressure', 'solve_regular_wave_pressure']
+
+from .pressure_bank import (
+    PreparationEstimate, PreparationProgress, PressureBankError, PressurePreparationError,
+    PressureResponseBank, prepare_pressure_bank,
+)
+__all__ += [
+    'PreparationEstimate', 'PreparationProgress', 'PressureBankError', 'PressurePreparationError',
+    'PressureResponseBank', 'prepare_pressure_bank',
+]
+
+from .wave_surface_fields import (
+    FieldSnapshot, SurfaceFields, WaveFieldError, evaluate_surface_fields, field_request,
+    missing_field_frequencies, prepare_field_snapshots, recover_field_snapshot,
+    save_field_snapshot, solve_field_snapshot, snapshot_from_dict, snapshot_to_dict,
+)
+__all__ += [
+    'snapshot_from_dict', 'snapshot_to_dict',
+    'FieldSnapshot', 'SurfaceFields', 'WaveFieldError', 'evaluate_surface_fields', 'field_request',
+    'missing_field_frequencies', 'prepare_field_snapshots', 'recover_field_snapshot',
+    'save_field_snapshot', 'solve_field_snapshot',
+]
