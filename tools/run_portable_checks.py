@@ -35,6 +35,15 @@ BLOCKED_OPTIONAL_PACKAGES = ("anyloads", "anyfileio", "capytaine", "OrcFxAPI")
 # Test modules selected for portable base CI.  Every module runs with only the
 # declared base dependencies; backend-dependent paths are mock-only.
 PORTABLE_TEST_MODULES = (
+    "test_excitation_cache",
+    "test_floating_radiation_fields",
+    "test_floating_transient_fields",
+    "test_floating_transient_prepare",
+    "test_pressure_bank",
+    "test_radiation_field_kernel",
+    "test_regular_wave_pressure",
+    "test_transient_native_profile",
+    "test_wave_surface_fields",
     "test_artifact_bound_panel_profile",
     "test_basis_sym_golden",
     "test_backends",

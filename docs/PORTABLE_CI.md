@@ -149,3 +149,13 @@ ordered allowlist into deterministic chunks so receipt runs fit bounded
 per-process check budgets; the union of the slices is exactly the allowlist
 (verified by the contract test). GitHub's effective clean environment is the
 final authority and is inspected after push.
+# Floating-history additions
+
+The portable selection also includes `test_excitation_cache`,
+`test_floating_radiation_fields`, `test_floating_transient_fields`,
+`test_floating_transient_prepare`, `test_pressure_bank`,
+`test_radiation_field_kernel`, `test_regular_wave_pressure`,
+`test_transient_native_profile` and `test_wave_surface_fields`.
+These exercise neutral records, analytical kernels and mocked backend contracts.
+Native cases retain their explicit environment/dependency gates; the portable
+runner blocks Capytaine and does not establish native scientific qualification.
