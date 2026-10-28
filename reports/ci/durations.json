@@ -3,6 +3,7 @@
 "source": "local JUnit, seconds per node id",
 "slow_files": [],
 "tests": {
+"tests/test_radiation_field_kernel.py::test_pointwise_bound_at_default_limits_uses_bounded_memory": 10.84,
 "tests/test_artifact_bound_panel_profile.py::test_bind_case_rechecks_implementation_modules": 0.094,
 "tests/test_artifact_bound_panel_profile.py::test_caller_admits_artifact_bound_profile_and_returns_terminal_probe": 0.254,
 "tests/test_artifact_bound_panel_profile.py::test_check_micro_passes_with_consistent_gradient": 0.167,
