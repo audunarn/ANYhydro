@@ -47,7 +47,7 @@ Conventions (docs/FIRST_SLICE_OPERATOR_CONTRACT.md, adopted 2026-10-08):
   never read as normalized severity measures.
 
 Base import touches only numpy, xarray and the standard library (plus
-anyhydro base modules) - never Qt, ANYsolver or Capytaine.
+anyhydro base modules) - never Qt, ANYfeSolver or Capytaine.
 """
 
 from __future__ import annotations

@@ -25,7 +25,7 @@ and the analytic example.
 This module is development-only: kernel artifacts never inherit a qualified
 status from their source dataset, and nothing here confers scientific
 qualification. Base import touches only numpy, xarray and the standard
-library (plus anyhydro base modules) - never Qt, ANYsolver or Capytaine.
+library (plus anyhydro base modules) - never Qt, ANYfeSolver or Capytaine.
 """
 
 from __future__ import annotations

@@ -40,7 +40,7 @@ native platform, version and build description identify the producer. They are
 explicit declarations, not independent build attestation or qualification.
 `build.verify()` verifies actual executable bytes/header without executing.
 `backend.diagnose()` additionally checks native platform availability. Imports
-require no Qt, ANYsolver or Capytaine; constructing the backend requires the
+require no Qt, ANYfeSolver or Capytaine; constructing the backend requires the
 optional ANYfileIO HAMS syntax interface already used by input preparation.
 
 The original `prepare_hams_deck` default retains its published-executable pin.

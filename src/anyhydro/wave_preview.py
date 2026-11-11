@@ -1,6 +1,6 @@
 """Neutral, unqualified fixed-body free-surface preview records (SI/WORLD).
 
-No Capytaine, Qt, ANYsolver or application imports at module import. These
+No Capytaine, Qt, ANYfeSolver or application imports at module import. These
 fields never admit hydrodynamic coefficients or supply mechanical forces.
 """
 import hashlib

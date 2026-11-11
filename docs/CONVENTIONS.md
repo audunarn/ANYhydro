@@ -66,7 +66,7 @@ and reordering. Validation rejects incomplete DOF axes.
 
 ## 8. Mechanical authority
 
-ANYsolver owns dry mass, center of gravity and inertia. ANYhydro stores
+ANYfeSolver owns dry mass, center of gravity and inertia. ANYhydro stores
 `center_of_mass` only as a geometric reference record; no mass or inertia
 variable exists in the schema, and unknown variables are rejected. Capytaine's
 automatically estimated rigid-body inertia is never production dry mass.

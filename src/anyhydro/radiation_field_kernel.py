@@ -55,7 +55,7 @@ from .radiation import (
     _trapezoid_weights,
 )
 
-#: documented numeric-array digest protocol shared (by specification, not by import) with ANYsolver's
+#: documented numeric-array digest protocol shared (by specification, not by import) with ANYfeSolver's
 #: ``numeric_array_digest``: sha256(b"numeric-array-v1|" + repr(shape tuple of ints) + b"|" + C-order '<f8' bytes)
 DIGEST_PROTOCOL = "numeric-array-v1"
 
@@ -975,7 +975,7 @@ _GRID_TOL = 1.0e-9
 def field_history_from_transient(fk: RadiationFieldKernel, result: Any, kind: str, *, method: str = "fft",
                                  block_length: Optional[int] = None,
                                  limits: Optional[FieldResourceLimits] = None) -> np.ndarray:
-    """BOUND field evaluation for a transient result (duck-typed: no ANYsolver import).
+    """BOUND field evaluation for a transient result (duck-typed: no ANYfeSolver import).
 
     Everything is checked BEFORE any evaluation: the result must be complete (``status == 'complete'``), carry the
     supported frame, and its computed ``kernel_digest`` / ``ainf_digest`` (``numeric-array-v1`` of the sampled

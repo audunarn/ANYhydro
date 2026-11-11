@@ -14,7 +14,7 @@ ANYhydro owns:
 - an imported-dataset backend that replays validated stored results.
 
 ANYhydro does **not** own dry mass, center of gravity or inertia: mechanical
-authority stays in ANYsolver. Physical mass never enters this package.
+authority stays in ANYfeSolver. Physical mass never enters this package.
 
 ## Status
 
@@ -244,7 +244,7 @@ MPL-2.0, matching the ANY ecosystem.
 `anyhydro.wave_preview` exposes neutral `incident_field`, `validate_field` and
 `positions_at_time` records with SI/WORLD geometry and exp(-i omega t) phasors.
 Incident fields consume public ANYloads Airy definitions; importing the module
-does not import Qt, ANYsolver or Capytaine. `compute_diffraction_preview` lazily
+does not import Qt, ANYfeSolver or Capytaine. `compute_diffraction_preview` lazily
 uses exact Capytaine3.0.0 for one fixed-body diffraction problem, with at most
 two bodies,48 immersed panels and1024 surface points. This optional development
 service does not change the coefficient backend's capability declarations.
