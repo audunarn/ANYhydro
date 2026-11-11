@@ -32,7 +32,7 @@ vt = ox.export_vessel_type(model, dataset, props, name="Barge", length_scale=L, 
 
 | Input | Rule |
 |---|---|
-| mass, centre of gravity (world), inertia about the CoG in world axes | the dataset carries no mass properties (ANYsolver owns them) |
+| mass, centre of gravity (world), inertia about the CoG in world axes | the dataset carries no mass properties (ANYfeSolver owns them) |
 | `length_scale` | normalises rotations (1/L) for the skew bound; also written as the vessel type `Length` |
 | `gravity` | the single g; must equal every gravity the dataset declares (contract provenance - required -, `wave_environment`, scalar `g`) |
 

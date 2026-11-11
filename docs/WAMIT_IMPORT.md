@@ -3,7 +3,7 @@
 `anyhydro.wamit_import.import_wamit7` connects public ANYfileIO records to the
 canonical dataset, owner frame transformations, stored backend and persistence.
 Install the optional `anyhydro[wamit]` extra. Base/headless imports do not require
-ANYfileIO, Qt, ANYsolver or Capytaine. No BEM executable is launched.
+ANYfileIO, Qt, ANYfeSolver or Capytaine. No BEM executable is launched.
 
 Supply authoritative full six-DOF `HydroBody` records, `HydroRequest` and an
 explicit `Wamit7ImportContract`: source body order, z-up coefficient frames,

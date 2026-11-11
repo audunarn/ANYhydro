@@ -690,7 +690,7 @@ def test_complex_sources_are_never_cast_to_real_and_symbolic_leftovers_are_refus
 
 
 class _BoundResult:
-    """Duck-typed bound transient result (what ANYsolver's FloatingTransientResult provides)."""
+    """Duck-typed bound transient result (what ANYfeSolver's FloatingTransientResult provides)."""
 
     def __init__(self, fk, a, v, **kw):
         self.status, self.complete, self.frame, self.digest_protocol = "complete", True, "body_attached_first_order", "numeric-array-v1"
