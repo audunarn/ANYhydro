@@ -107,6 +107,14 @@ PORTABLE_TEST_MODULES = (
 # Test modules excluded from portable base CI, each with its concrete
 # dependency/fixture reason and the evidence gate that still applies.
 EXCLUDED_TEST_MODULES = {
+    "test_orcawave_pressure": (
+        "checks external OrcaWave result records with ANYfileIO, ANYgeometry and an independent "
+        "ANYloads resultant. Remaining gate: the prescribed-pressure integration workflow."
+    ),
+    "test_prescribed_pressure_bank": (
+        "validates native stored sheets using ANYgeometry from the optional orcawave extra. "
+        "Remaining gate: the prescribed-pressure integration workflow."
+    ),
     "test_build_e1_backend": (
         "reads gitignored local .development-evidence/w5-isolated-backend-20261010 "
         "upstream Capytaine Fortran sources at collection time; the evidence is "
