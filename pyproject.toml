@@ -8,7 +8,7 @@ version = "0.2.3"
 description = "Neutral hydrodynamic data model, validation, transformations and persistence for the ANY marine ecosystem"
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MPL-2.0"
+license = "Apache-2.0"
 authors = [{ name = "ANY ecosystem development" }]
 keywords = ["hydrodynamics", "potential-flow", "multibody", "marine"]
 dependencies = [

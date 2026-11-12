@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Artifact-bound accuracy profile: original producer reference, corrected evaluator.
 
 The immutable reference bundle keeps identifying its ORIGINAL producer backend.
