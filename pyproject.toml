@@ -20,7 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 orcawave = [
     "ANYfileio @ git+https://github.com/audunarn/ANYfileIO.git@e01bd7056e1832e7e9c6a1209aef8a9ad042c996",
-    "ANYgeometry @ git+https://github.com/audunarn/ANYgeometry.git@9d3196936a9e1ad7f9f957e778c8fd314d53d048",
+    "ANYgeometry @ git+https://github.com/audunarn/ANYgeometry.git@5dc4b1fffc3525dc707f784d582e2b723d441be7",
 ]
 wamit = ["ANYfileio>=0.3.2"]
 sea-state = ["ANYloads>=0.1.0"]
