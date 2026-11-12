@@ -414,3 +414,8 @@ __all__ += [
     'missing_field_frequencies', 'prepare_field_snapshots', 'recover_field_snapshot',
     'save_field_snapshot', 'solve_field_snapshot',
 ]
+
+from .orcawave_pressure import ImportedPressureBank, import_pressure_bank
+__all__ += ['ImportedPressureBank', 'import_pressure_bank']
+from .prescribed_pressure import PrescribedPressureBank, bank_from_anyhydro_pressure_jump
+__all__ += ['PrescribedPressureBank', 'bank_from_anyhydro_pressure_jump']
