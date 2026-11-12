@@ -10,5 +10,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install ".[dev,orcawave]"
+      - run: python -m pip install ".[dev,orcawave]" "ANYloads @ git+https://github.com/audunarn/ANYloads.git@0a671a30bfd213c30df16bb7142cfe4fa8e1fece"
       - run: python -m pytest -q tests/test_orcawave_pressure.py tests/test_prescribed_pressure_bank.py
