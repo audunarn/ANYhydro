@@ -25,6 +25,7 @@ orcawave = [
 wamit = ["ANYfileio>=0.3.2"]
 sea-state = ["ANYloads>=0.1.0"]
 capytaine = ["capytaine>=3.0,<3.1"]
+waterline-lid = ["capytaine>=3.0,<3.1", "ANYmesher", "shapely>=2.1,<3"]
 dev = [
     "pytest>=7",
     "build>=1",
