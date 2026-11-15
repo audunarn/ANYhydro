@@ -419,3 +419,5 @@ from .orcawave_pressure import ImportedPressureBank, import_pressure_bank
 __all__ += ['ImportedPressureBank', 'import_pressure_bank']
 from .prescribed_pressure import PrescribedPressureBank, bank_from_anyhydro_pressure_jump
 __all__ += ['PrescribedPressureBank', 'bank_from_anyhydro_pressure_jump']
+from .family_pressure_bank import floating_family_to_pressure_bank, linear_rao
+__all__ += ['floating_family_to_pressure_bank', 'linear_rao']
