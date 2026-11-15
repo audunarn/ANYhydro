@@ -13,6 +13,14 @@ The posed hull must be clipped by the geometry owner BEFORE this module; the sol
 the manifest exactly (no native auto-clipping or reordering).  Full source vectors (lid sources included when a lid is
 present) stay in the record; masks apply only to physical OUTPUT hull pressures/forces.  Native work requires
 ``ANYFEM_NATIVE_FLOATING_FIELD=1`` and never happens in recovery.
+
+Reserved recipe ``DIRECT_RECIPE`` (docs/FLOATING_PASSIVITY.md): ANYhydro Green function and the direct method, one state for
+all of the above.  A direct solve has no source vector, so under this recipe the ``radiation_sources``/``diffraction_sources``
+slots hold the Neumann data of the solve and off-body recovery is the Green representation of (retained phi, Neumann data).
+``ACTIVE_RECIPE`` stays the default route; records of either recipe never share a cache entry or donor.
+
+Explicit capacity ``source_capacity`` (``SOURCE_CAPACITIES``, direct recipe only): a versioned name bound into the request that
+admits more FULL physical hull panels than the default 600.  It is absent from every other request, so their identities are unchanged.
 """
 from dataclasses import dataclass
 import hashlib, json, math, os
@@ -24,6 +32,13 @@ from .wave_surface_fields import (WaveFieldError, WaveFieldMissing, _json, _nume
 
 VERSION = 'floating_field_family_v1'
 RECIPE = 'native_indirect_6rad_1diff_mean_body_axes_v1'
+DIRECT_RECIPE = 'native_direct_owner_gf_6rad_1diff_mean_body_axes_v2'
+DIRECT_LID_RECIPE = 'native_direct_owner_gf_6rad_1diff_internal_lid_v1'
+DIRECT_RECIPES = (DIRECT_RECIPE, DIRECT_LID_RECIPE)
+RECIPES = (RECIPE, *DIRECT_RECIPES)
+ACTIVE_RECIPE = RECIPE      # DIRECT_RECIPE is selected only explicitly, together with a resolved source
+DEFAULT_PANEL_CEILING = 600
+SOURCE_CAPACITIES = {'refined_direct_quad_v1': 2500, 'faceted_hull_v1': 2500, 'faceted_quad_hull_v1':4000}    # full physical hull panels
 NAMESPACE = 'floating-field-families'
 DOF_NAMES = ('Surge', 'Sway', 'Heave', 'Roll', 'Pitch', 'Yaw')
 NATIVE_GATE = 'ANYFEM_NATIVE_FLOATING_FIELD'
@@ -39,7 +54,22 @@ def _rotation(Q0):
     return Q
 
 
-def family_request(vertices, faces, surface_ids, *, heading, water_depth, rho, gravity, Q0, cg_world):
+def _panel_ceiling(request):
+    return SOURCE_CAPACITIES[request['source_capacity']] if 'source_capacity' in request else DEFAULT_PANEL_CEILING
+
+
+def _check_capacity(request, panels):
+    if 'source_capacity' not in request:
+        return
+    capacity = request['source_capacity']
+    if capacity not in SOURCE_CAPACITIES or request['recipe'] not in DIRECT_RECIPES:
+        raise WaveFieldError('source capacity must be a known profile of the direct family recipe')
+    if panels > SOURCE_CAPACITIES[capacity]:
+        raise WaveFieldError(f'{panels} source panels exceed the {capacity} capacity {SOURCE_CAPACITIES[capacity]}')
+
+
+def family_request(vertices, faces, surface_ids, *, heading, water_depth, rho, gravity, Q0, cg_world, recipe=None,
+                   source_capacity=None, direct_lid_profile=None, source_quadrature=None):
     v = np.asarray(vertices, dtype=np.float64); f = np.asarray(faces)
     if f.dtype.kind not in 'iu' or f.ndim != 2 or f.shape[1] != 4:
         raise WaveFieldError('integer quad/degenerate-triangle source faces required')
@@ -47,11 +77,43 @@ def family_request(vertices, faces, surface_ids, *, heading, water_depth, rho, g
     values = (heading, water_depth, rho, gravity, *cg)
     if not all(math.isfinite(float(x)) for x in values) or min(water_depth, rho, gravity) <= 0:
         raise WaveFieldError('invalid physical settings')
-    return dict(version=VERSION, recipe=RECIPE, heading=float(heading) % math.tau, water_depth=float(water_depth),
-                rho=float(rho), gravity=float(gravity), conventions=CONVENTIONS, Q0=_rotation(Q0).tolist(),
-                cg_world=cg.tolist(),
-                geometry=_numeric_hash(dict(surface_ids=tuple(str(x) for x in surface_ids)),
-                                       dict(vertices=v, faces=f.astype(np.int64))))
+    recipe = ACTIVE_RECIPE if recipe is None else recipe
+    if recipe not in RECIPES:
+        raise WaveFieldError('unknown floating family recipe')
+    request = dict(version=VERSION, recipe=recipe, heading=float(heading) % math.tau, water_depth=float(water_depth),
+                   rho=float(rho), gravity=float(gravity), conventions=CONVENTIONS, Q0=_rotation(Q0).tolist(),
+                   cg_world=cg.tolist(),
+                   geometry=_numeric_hash(dict(surface_ids=tuple(str(x) for x in surface_ids)),
+                                          dict(vertices=v, faces=f.astype(np.int64))))
+    if source_quadrature is not None:
+        request['source_quadrature'] = source_quadrature
+        _source_quadrature(request)
+    if source_capacity is not None:
+        request['source_capacity'] = source_capacity
+        _check_capacity(request, len(f))
+    if direct_lid_profile is not None:
+        from .direct_lid_profile import bind_profile, DirectLidProfile, profile_from_dict, verify_canonical_profile
+        profile = (direct_lid_profile if isinstance(direct_lid_profile, DirectLidProfile) else
+                   profile_from_dict(direct_lid_profile))
+        request = bind_profile(request, profile)
+        if len(f) > _panel_ceiling(request):
+            raise WaveFieldError('physical hull exceeds the explicit source capacity (600 by default)')
+        verify_canonical_profile(profile, v, f, surface_ids, water_depth=water_depth)
+    if (recipe == DIRECT_LID_RECIPE) != ('direct_lid_profile' in request):
+        raise WaveFieldError('the direct lid recipe requires its explicit complete source profile')
+    return request
+
+
+def _source_quadrature(request):
+    """Absent means the historical centroid rule; new rules are explicit identities."""
+    if 'source_quadrature' not in request:
+        return None
+    value = request['source_quadrature']
+    from .source_quadrature import RULES
+    if (not isinstance(value, str) or value not in ('Gauss-Legendre 2', *RULES)
+            or request.get('recipe') not in DIRECT_RECIPES or 'transient_source_profile' in request):
+        raise WaveFieldError('source quadrature requires a supported explicit direct-family rule')
+    return value
 
 
 @dataclass(frozen=True)
@@ -80,6 +142,8 @@ class FloatingFamilySnapshot:
     centers: object = None
     normals: object = None
     areas: object = None
+    full_potential_radiation: object = None  # new lid recipe only: (6,nfull), never hull-masked
+    full_potential_diffraction: object = None  # (nfull,), diffraction only
 
     def __post_init__(self):
         for name, dtype in (('vertices', np.float64), ('faces', np.int64), ('radiation_sources', np.complex128),
@@ -106,8 +170,16 @@ class FloatingFamilySnapshot:
         if (not math.isfinite(self.omega) or self.omega <= 0 or self.radiation_sources.shape != (6, n) or n < len(self.faces)
                 or self.diffraction_sources.shape != (n,) or self.added_mass.shape != (6, 6) or self.damping.shape != (6, 6)
                 or self.excitation.shape != (6,) or self.request.get('version') != VERSION
-                or self.request.get('recipe') != RECIPE or len(self.surface_ids) != len(self.faces)):
+                or self.request.get('recipe') not in RECIPES or len(self.surface_ids) != len(self.faces)):
             raise WaveFieldError('invalid floating field snapshot')
+        if self.request['recipe'] in DIRECT_RECIPES and (self.provider.get('method') != 'direct' or self.centers is None
+                                                        or 'transient_source_profile' in self.request):
+            raise WaveFieldError('direct family records need the direct provider, hull potentials and no transient profile')
+        _check_capacity(self.request, len(self.faces))
+        quadrature = _source_quadrature(self.request)
+        if quadrature is not None or 'source_quadrature' in self.provider:
+            if self.provider.get('source_quadrature') != quadrature:
+                raise WaveFieldError('source quadrature differs from the captured provider')
         arrays = (self.radiation_sources, self.diffraction_sources, self.added_mass, self.damping, self.excitation)
         if not all(np.isfinite(a).all() for a in arrays):
             raise WaveFieldError('non-finite floating field snapshot')
@@ -119,6 +191,26 @@ class FloatingFamilySnapshot:
             profile = profile_from_request(self.request)
             if n != len(profile.source_faces):
                 raise WaveFieldError('retained sources do not match the complete transient source profile')
+        if self.request['recipe'] == DIRECT_LID_RECIPE:
+            from .direct_lid_profile import profile_from_request
+            profile = profile_from_request(self.request)
+            if profile is None or n != len(profile.source_faces) or int(profile.hull_mask.sum()) != len(self.faces):
+                raise WaveFieldError('direct lid retained source count/mask differs')
+            if not np.array_equal(profile.source_vertices[profile.source_faces[profile.hull_mask]], self.vertices[self.faces]):
+                raise WaveFieldError('direct lid hull source geometry/order differs')
+            for name, shape in (('full_potential_radiation', (6,n)), ('full_potential_diffraction', (n,))):
+                value = getattr(self, name)
+                if value is None or np.asarray(value).shape != shape or not np.isfinite(value).all():
+                    raise WaveFieldError('direct lid records require complete full-source potentials')
+                object.__setattr__(self, name, _frozen(value, np.complex128))
+            if not np.array_equal(self.panel_pressure_radiation,
+                                  1j * self.omega * self.request['rho'] * self.full_potential_radiation[:, profile.hull_mask]):
+                raise WaveFieldError('hull radiation pressure differs from full-source potentials')
+            if (np.any(self.radiation_sources[:, ~profile.hull_mask] != 0.)
+                    or np.any(self.diffraction_sources[~profile.hull_mask] != 0.)):
+                raise WaveFieldError('mathematical lid Neumann entries must remain zero')
+        elif self.full_potential_radiation is not None or self.full_potential_diffraction is not None or 'direct_lid_profile' in self.request:
+            raise WaveFieldError('full source potentials/profile require the direct lid recipe')
         ident = self._identity()
         if self.snapshot_id and self.snapshot_id != ident:
             raise WaveFieldError('floating snapshot content identity mismatch')
@@ -135,6 +227,8 @@ class FloatingFamilySnapshot:
         if self.centers is not None:
             arrays.update(ppr=self.panel_pressure_radiation, ppd=self.panel_pressure_incident_diffraction,
                           ctr=self.centers, nrm=self.normals, are=self.areas)
+        if self.full_potential_radiation is not None:
+            arrays.update(full_rad_phi=self.full_potential_radiation, full_dif_phi=self.full_potential_diffraction)
         return _numeric_hash(meta, arrays)
 
     def validate(self):
@@ -148,6 +242,7 @@ def _path(cache, request, omega):
 
 def save_family_snapshot(cache, snap):
     import tempfile
+    snap.validate()
     path = _path(cache, snap.request, snap.omega); path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, suffix='.tmp')
     try:
@@ -158,6 +253,8 @@ def save_family_snapshot(cache, snap):
                                             has_prony=snap.prony is not None, has_panels=snap.centers is not None)),
                      vertices=snap.vertices, faces=snap.faces, rad=snap.radiation_sources, dif=snap.diffraction_sources,
                      A=snap.added_mass, B=snap.damping, F=snap.excitation,
+                     **({} if snap.full_potential_radiation is None else dict(full_rad_phi=snap.full_potential_radiation,
+                                                                           full_dif_phi=snap.full_potential_diffraction)),
                      **({} if snap.prony is None else dict(prony=snap.prony)),
                      **({} if snap.centers is None else dict(ppr=snap.panel_pressure_radiation,
                          ppd=snap.panel_pressure_incident_diffraction, ctr=snap.centers, nrm=snap.normals, are=snap.areas)))
@@ -178,6 +275,9 @@ def snapshot_to_payload(snap):
                       has_panels=snap.centers is not None))
     arrays = dict(vertices=snap.vertices, faces=snap.faces, rad=snap.radiation_sources, dif=snap.diffraction_sources,
                   A=snap.added_mass, B=snap.damping, F=snap.excitation)
+    snap.validate()
+    if snap.full_potential_radiation is not None:
+        arrays.update(full_rad_phi=snap.full_potential_radiation, full_dif_phi=snap.full_potential_diffraction)
     if snap.prony is not None:
         arrays['prony'] = snap.prony
     if snap.centers is not None:
@@ -195,7 +295,8 @@ def snapshot_from_payload(meta_text, arrays):
                                   arrays['prony'] if meta.get('has_prony') else None, float(meta.get('prony_kh', 0.)),
                                   meta.get('prony_method', ''), meta.get('gf_settings'), meta['snapshot_id'],
                                   *((arrays['ppr'], arrays['ppd'], arrays['ctr'], arrays['nrm'], arrays['are'])
-                                    if meta.get('has_panels') else (None,) * 5))
+                                    if meta.get('has_panels') else (None,) * 5),
+                                  arrays.get('full_rad_phi'), arrays.get('full_dif_phi'))
 
 
 def _donor_path(cache, request, omega):
@@ -256,12 +357,7 @@ def recover_family_snapshot(cache, request, omega):
             meta = json.loads(str(d['metadata']))
             if _json(meta['request']) != _json(request) or meta['omega'] != float(omega).hex() or not _sha(meta['snapshot_id']):
                 raise WaveFieldError('floating snapshot request/frequency mismatch')
-            return FloatingFamilySnapshot(meta['request'], float(omega), d['vertices'], d['faces'], tuple(meta['surface_ids']),
-                                          d['rad'], d['dif'], d['A'], d['B'], d['F'], meta['provider'],
-                                          d['prony'] if meta.get('has_prony') else None, float(meta.get('prony_kh', 0.)),
-                                          meta.get('prony_method', ''), meta.get('gf_settings'), meta['snapshot_id'],
-                                          *((d['ppr'], d['ppd'], d['ctr'], d['nrm'], d['are']) if meta.get('has_panels')
-                                            else (None,) * 5))
+            return snapshot_from_payload(str(d['metadata']), {k: np.array(d[k]) for k in d.files if k != 'metadata'})
     except WaveFieldError:
         raise
     except Exception as error:
@@ -279,14 +375,19 @@ def missing_family_frequencies(cache, request, omegas):
 
 
 def _body_for_family(cpt, vertices, faces, surface_ids, request, omega):
+    if 'direct_lid_profile' in request:
+        from .direct_lid_profile import body_for_profile
+        return body_for_profile(cpt, vertices, faces, surface_ids, request, omega)
     if 'transient_source_profile' in request:
         from .transient_native_profile import body_for_profile
         return body_for_profile(cpt, vertices, faces, surface_ids, request, omega)
     from ._pressure_body import prepare_body
     Q = np.array(request['Q0']); cg = np.array(request['cg_world'])
+    ceiling = _panel_ceiling(request)
     v, f, labels, mesh, body = prepare_body(cpt, vertices, faces, surface_ids, period=math.tau / omega,
                                             heading=request['heading'], water_depth=request['water_depth'],
-                                            rho=request['rho'], max_panels=600)
+                                            rho=request['rho'], max_panels=ceiling, panel_ceiling=ceiling,
+                                            source_quadrature=_source_quadrature(request))
     # The native body must be EXACTLY the posed, pre-clipped manifest: no auto clipping, no reordering.
     if not (np.array_equal(np.asarray(body.mesh.vertices), v) and np.array_equal(np.asarray(body.mesh.faces), f)):
         raise WaveFieldError('solved body geometry/order differs from the retained manifest (native clipping/reordering)')
@@ -303,13 +404,33 @@ def radiation_key(request):
     return _json({k: v for k, v in request.items() if k != 'heading'})
 
 
+def validate_family_coherence(snapshots):
+    """A coherent recipe cannot splice provider or versioned Green settings across frequencies.
+
+    Realized Prony arrays and kh are frequency-specific and deliberately excluded.
+    Existing owner settings contain the Prony/imaginary-kernel revision identities.
+    """
+    lid = [s for s in snapshots if s.request.get('recipe') == DIRECT_LID_RECIPE]
+    if not lid:
+        return
+    if len(lid) != len(snapshots):
+        raise WaveFieldError('cannot splice different recipes into a direct lid family')
+    reference = _json(dict(provider=lid[0].provider, gf_settings=lid[0].gf_settings))
+    for snap in lid:
+        snap.validate()
+        if _json(dict(provider=snap.provider, gf_settings=snap.gf_settings)) != reference:
+            raise WaveFieldError('direct lid family provider/Green-function settings differ across frequencies')
+
+
 def solve_family_snapshot(vertices, faces, surface_ids, omega, *, heading, water_depth, rho=1025., gravity=9.81, Q0, cg_world,
-                          donor=None, source_profile=None):
-    """Native 6 radiation + 1 diffraction indirect solves with ONE solver (explicit Prepare).
+                          donor=None, source_profile=None, recipe=None, source_capacity=None, direct_lid_profile=None,
+                          source_quadrature=None):
+    """Native 6 radiation + 1 diffraction solves with ONE solver (explicit Prepare); ``recipe`` selects indirect or direct.
 
     ``donor``: a retained snapshot of the SAME radiation basis (``radiation_key`` + omega equal, any heading).  The six
     radiation solutions, A, B and the realised Green-function/Prony state are REUSED verbatim and only the diffraction RHS
-    for the new heading is solved, under that replayed state - so A, B, Fexc and pressures still come from one solver state."""
+    for the new heading is solved, under that replayed state - so A, B, Fexc and pressures still come from one solver state.
+    The key contains the recipe, so a donor of the other recipe is refused."""
     # No environment gate here: the delivered product runs this on an explicit Prepare.  ``NATIVE_GATE`` only schedules
     # the native pytest nodes (they are skipped unless the parent sets it).
     import importlib.metadata, capytaine as cpt
@@ -317,8 +438,15 @@ def solve_family_snapshot(vertices, faces, surface_ids, omega, *, heading, water
     from pathlib import Path as P
     if importlib.metadata.version('capytaine').split('.')[:2] != ['3', '0']:
         raise WaveFieldError('floating family requires Capytaine 3.0')
+    if source_profile is not None:              # the explicit transient contract keeps its captured indirect recipe
+        if recipe not in (None, RECIPE):
+            raise WaveFieldError('transient source profiles are defined for the indirect recipe only')
+        recipe = RECIPE
     request = family_request(vertices, faces, surface_ids, heading=heading, water_depth=water_depth, rho=rho, gravity=gravity,
-                             Q0=Q0, cg_world=cg_world)
+                             Q0=Q0, cg_world=cg_world, recipe=recipe, source_capacity=source_capacity,
+                             direct_lid_profile=direct_lid_profile, source_quadrature=source_quadrature)
+    direct = request['recipe'] in DIRECT_RECIPES
+    method_name = 'direct' if direct else 'indirect'
     if source_profile is not None:
         from .transient_native_profile import bind_profile
         request = bind_profile(request, source_profile)
@@ -327,6 +455,8 @@ def solve_family_snapshot(vertices, faces, surface_ids, omega, *, heading, water
     A = np.zeros((6, 6)); B = np.zeros((6, 6)); rad = []; prad = []
     hull = np.asarray(body.hull_mask, dtype=bool)
     w = float(omega)
+    full_rad = []
+    lid_direct = request['recipe'] == DIRECT_LID_RECIPE
     if donor is not None:
         donor.validate()
         if radiation_key(donor.request) != radiation_key(request) or float(donor.omega) != w or donor.centers is None:
@@ -337,14 +467,25 @@ def solve_family_snapshot(vertices, faces, surface_ids, omega, *, heading, water
         if source_profile is not None:
             from .transient_native_profile import solver_for_profile
             solver = solver_for_profile(cpt, source_profile)
+        elif direct:
+            from .green_function import anyhydro_green_function
+            solver = cpt.BEMSolver(green_function=anyhydro_green_function())
         else:
             solver = cpt.BEMSolver()
     def _verify(problem):
-        # native problem initialisation may clip/reorder: the SOLVED body must still equal the manifest; lids unsupported
+        # Native initialization may clip/reorder; verify physical hull and declared full-source order/mask.
         pm = problem.body.mesh
         if not (np.array_equal(np.asarray(pm.vertices), v) and np.array_equal(np.asarray(pm.faces), f)):
             raise WaveFieldError('solved problem geometry/order differs from the manifest (native clipping/reordering)')
-        if 'transient_source_profile' in request:
+        from .source_quadrature import verify as verify_quadrature
+        try:
+            verify_quadrature(problem.body.mesh_including_lid, _source_quadrature(request))
+        except ValueError as error:
+            raise WaveFieldError(str(error)) from error
+        if lid_direct:
+            from .direct_lid_profile import verify_profile_body
+            verify_profile_body(problem.body, request)
+        elif 'transient_source_profile' in request:
             from .transient_native_profile import verify_profile_body
             verify_profile_body(problem.body, request)
         elif problem.body.mesh_including_lid.nb_faces != pm.nb_faces:
@@ -353,19 +494,27 @@ def solve_family_snapshot(vertices, faces, surface_ids, omega, *, heading, water
     if donor is not None:
         rad = [np.array(s) for s in donor.radiation_sources]
         prad = [np.array(p) for p in donor.panel_pressure_radiation]
+        if lid_direct:
+            full_rad = [np.array(p) for p in donor.full_potential_radiation]
         A, B = np.array(donor.added_mass), np.array(donor.damping)
-    for j, name in enumerate(DOF_NAMES if donor is None else ()):
-        res = solver.solve(_verify(cpt.RadiationProblem(radiating_dof=name, **kw)), method='indirect', keep_details=True,
-                           n_threads=1)
-        if getattr(res, 'sources', None) is None or getattr(res, 'potential', None) is None:
+    def _state(res):
+        # the retained vector that, with the hull potential, reproduces the off-body field of this solve
+        if getattr(res, 'potential', None) is None or (not direct and getattr(res, 'sources', None) is None):
             raise WaveFieldError('backend did not retain radiation sources/potential')
-        rad.append(np.asarray(res.sources))
+        return np.asarray(res.problem.boundary_condition if direct else res.sources, dtype=np.complex128)
+    for j, name in enumerate(DOF_NAMES if donor is None else ()):
+        res = solver.solve(_verify(cpt.RadiationProblem(radiating_dof=name, **kw)), method=method_name, keep_details=True,
+                           n_threads=1)
+        rad.append(_state(res))
         pot = np.asarray(res.potential)
+        if lid_direct:
+            full_rad.append(pot.copy())
         prad.append(1j * w * rho * (pot[hull] if pot.shape[0] == hull.shape[0] else pot))
         for i, dof in enumerate(DOF_NAMES):
             A[i, j] = res.added_mass[dof]; B[i, j] = res.radiation_damping[dof]
     dprob = _verify(cpt.DiffractionProblem(wave_direction=request['heading'], **kw))
-    dres = solver.solve(dprob, method='indirect', keep_details=True, n_threads=1)
+    dres = solver.solve(dprob, method=method_name, keep_details=True, n_threads=1)
+    diffraction_state = _state(dres)
     fk = froude_krylov_force(dprob)
     from capytaine.bem.airy_waves import airy_waves_pressure
     dpot = np.asarray(dres.potential)
@@ -374,11 +523,20 @@ def solve_family_snapshot(vertices, faces, surface_ids, omega, *, heading, water
     F = np.array([fk[d] + dres.forces[d] for d in DOF_NAMES], dtype=np.complex128)
     gf = solver.engine.green_function
     settings = {k: val for k, val in gf.exportable_settings.items() if k != 'green_function'}
-    provider = dict(backend='capytaine', version=cpt.__version__, path=str(P(cpt.__file__).resolve()), method='indirect',
-                    recipe=RECIPE, engine=type(solver.engine).__name__, green_function=gf.exportable_settings['green_function'])
+    provider = dict(backend='capytaine', version=cpt.__version__, path=str(P(cpt.__file__).resolve()), method=method_name,
+                    recipe=request['recipe'], engine=type(solver.engine).__name__,
+                    green_function=gf.exportable_settings['green_function'])
+    if _source_quadrature(request) is not None:
+        provider['source_quadrature'] = request['source_quadrature']
     prony = None; kh = 0.; method = ''
     if donor is not None:                       # the replayed realised state IS the donor's retained state
         provider, settings, prony, kh, method = donor.provider, donor.gf_settings, donor.prony, donor.prony_kh, donor.prony_method
+    elif direct:
+        if not math.isfinite(water_depth):
+            raise WaveFieldError('the direct family recipe is defined for finite depth only')
+        method = str(settings.get('finite_depth_prony_decomposition_method', 'python')).lower()
+        kh = float(dprob.wavenumber * water_depth)   # the validated decomposition is deterministic: this IS the solved state
+        prony = np.array(gf.find_best_exponential_decomposition(kh), dtype=np.float64)
     elif math.isfinite(water_depth):
         method = str(settings.get('finite_depth_prony_decomposition_method', 'python')).lower()
         kh = float(dprob.wavenumber * water_depth)
@@ -387,10 +545,11 @@ def solve_family_snapshot(vertices, faces, surface_ids, omega, *, heading, water
         prony = np.array(gf.find_best_exponential_decomposition(kh), dtype=np.float64)
         if before is None or cached.cache_info().hits <= before:
             raise WaveFieldError('could not capture the realised finite-depth Green-function decomposition')
-    return FloatingFamilySnapshot(request, float(omega), v, f, labels, np.array(rad), np.asarray(dres.sources), A, B, F,
+    return FloatingFamilySnapshot(request, float(omega), v, f, labels, np.array(rad), diffraction_state, A, B, F,
                                   provider, prony, kh, method, settings, '', np.array(prad), p_id, centers,
                                   np.asarray(body.mesh.faces_normals, dtype=float),
-                                  np.asarray(body.mesh.faces_areas, dtype=float))
+                                  np.asarray(body.mesh.faces_areas, dtype=float),
+                                  np.array(full_rad) if lid_direct else None, dpot if lid_direct else None)
 
 
 def _potentials(snap, points, *, radiation_index=None):
@@ -398,6 +557,8 @@ def _potentials(snap, points, *, radiation_index=None):
     import capytaine as cpt
     from capytaine.bem.airy_waves import airy_waves_potential
     snap.validate(); r = snap.request
+    if r['recipe'] in DIRECT_RECIPES:
+        return _NativeRecovery(snap).potential(points, radiation_index)
     if (snap.provider.get('backend') != 'capytaine' or snap.provider.get('version') != cpt.__version__
             or snap.provider.get('path') != str(Path(cpt.__file__).resolve())):
         raise WaveFieldError('retained sources were produced by a different Capytaine provider; prepare again')
@@ -438,11 +599,41 @@ class _NativeRecovery:
             prony = snap.prony; gf_settings = snap.gf_settings; prony_kh = snap.prony_kh; prony_method = snap.prony_method
             provider = snap.provider
         self.solver = cpt.BEMSolver(green_function=_replay_green_function(cpt, _S, self.diffraction))
+        self._operators = (None, None)
+
+    def _green_representation(self, pts, prob, phi, neumann):
+        """phi(x) = S_x (dphi/dn) - D_x phi on the retained hull: the off-body field of the direct solve, under its replayed kernel.
+        S, D depend on the points and the frequency only, so the seven states of this snapshot share one evaluation per point set."""
+        key, operators = self._operators
+        if key != pts.tobytes():
+            operators = self.solver.engine.green_function.evaluate(pts, prob.body.mesh_including_lid, free_surface=prob.free_surface,
+                                                                   water_depth=prob.water_depth, wavenumber=prob.wavenumber,
+                                                                   adjoint_double_layer=False, early_dot_product=True,
+                                                                   diagonal_term_in_double_layer=False)
+            self._operators = pts.tobytes(), operators
+        S, D = operators
+        return S @ neumann - D @ phi
 
     def potential(self, points, radiation_index=None):
-        from capytaine.bem.airy_waves import airy_waves_potential
+        from capytaine.bem.airy_waves import airy_waves_potential, airy_waves_pressure
         cpt, snap = self.cpt, self.snap
         pts = np.asarray(points, dtype=float)
+        if snap.request['recipe'] in DIRECT_RECIPES:
+            if snap.request['recipe'] == DIRECT_LID_RECIPE:
+                if radiation_index is None:
+                    prob = self.diffraction
+                    return self._green_representation(pts, prob, snap.full_potential_diffraction, snap.diffraction_sources) + np.asarray(airy_waves_potential(pts, prob))
+                prob = cpt.RadiationProblem(radiating_dof=DOF_NAMES[radiation_index], **self.kw)
+                return self._green_representation(pts, prob, snap.full_potential_radiation[radiation_index], snap.radiation_sources[radiation_index])
+            scale = 1j * snap.omega * snap.request['rho']
+            if radiation_index is None:
+                prob = self.diffraction
+                wave = np.asarray(airy_waves_pressure(snap.centers, prob))
+                phi = (snap.panel_pressure_incident_diffraction - wave) / scale
+                return self._green_representation(pts, prob, phi, snap.diffraction_sources) + np.asarray(airy_waves_potential(pts, prob))
+            prob = cpt.RadiationProblem(radiating_dof=DOF_NAMES[radiation_index], **self.kw)
+            return self._green_representation(pts, prob, snap.panel_pressure_radiation[radiation_index] / scale,
+                                              snap.radiation_sources[radiation_index])
         if radiation_index is None:
             prob = self.diffraction
             res = prob.make_results_container(sources=np.asarray(snap.diffraction_sources))

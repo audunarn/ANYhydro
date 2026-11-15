@@ -237,6 +237,8 @@ def _replay_green_function(cpt,snapshot,problem):
     if snapshot.provider.get('green_function') == 'TransientDelhommeau':
         from .transient_native_profile import replay_profile_green_function
         return replay_profile_green_function(cpt, snapshot, problem)
+    if snapshot.provider.get('green_function') == 'AnyhydroDelhommeau':
+        return _replay_owner_green_function(snapshot, problem)
     default=cpt.BEMSolver().engine.green_function
     effective={k:v for k,v in default.exportable_settings.items() if k!='green_function'}
     if snapshot.prony is None or snapshot.gf_settings is None:
@@ -256,6 +258,31 @@ def _replay_green_function(cpt,snapshot,problem):
         __hash__=type(default).__hash__
     _Replay.__name__=type(default).__name__
     return _Replay(**effective)
+
+
+def _replay_owner_green_function(snapshot,problem):
+    """ANYhydro Green function restricted to the retained decomposition; never refits and never falls back to the default class."""
+    from .green_function import anyhydro_green_function
+    owner=anyhydro_green_function()
+    effective={k:v for k,v in owner.exportable_settings.items() if k!='green_function'}
+    if snapshot.prony is None or snapshot.gf_settings is None:
+        raise WaveFieldError('snapshot lacks the realised Green-function decomposition; prepare fields again')
+    if _json(effective)!=_json(snapshot.gf_settings):
+        raise WaveFieldError('installed Green-function settings differ from the captured backend settings')
+    kh=float(problem.wavenumber*problem.water_depth)
+    if kh!=snapshot.prony_kh:raise WaveFieldError('retained decomposition belongs to a different dimensionless wavenumber')
+    retained=np.array(snapshot.prony);retained_kh=snapshot.prony_kh
+
+    class _Replay(type(owner)):
+        def find_best_exponential_decomposition(self,dimensionless_wavenumber,*,method=None):
+            if float(dimensionless_wavenumber)!=retained_kh:
+                raise WaveFieldError('replayed Green function asked for a decomposition that was not retained')
+            return np.array(retained)
+        __hash__=type(owner).__hash__
+    _Replay.__name__=type(owner).__name__
+    replay=_Replay()
+    replay.exportable_settings=dict(owner.exportable_settings);replay._hash=owner._hash
+    return replay
 
 
 def _capytaine_total_potential(snapshot,points):
