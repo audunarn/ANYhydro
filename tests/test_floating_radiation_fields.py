@@ -30,6 +30,50 @@ def make_snapshot(scale=1.0):
                                      centers=np.ones((n, 3)), normals=np.tile([0.0, 0.0, 1.0], (n, 1)), areas=np.ones(n))
 
 
+def make_recipe_snapshot(omega, recipe, gf_settings=None, provider=None):
+    """In-memory record of ``recipe`` (no Capytaine): owner-Green revision identity lives in ``gf_settings``."""
+    v, f = box_quads()
+    ids = tuple(f"p{i}" for i in range(len(f)))
+    req = ff.family_request(v, f, ids, heading=0.3, water_depth=50.0, rho=1025.0, gravity=9.81, Q0=np.eye(3),
+                            cg_world=(0.0, 0.0, -0.4), recipe=recipe)
+    n = len(f)
+    rng = np.random.default_rng(5)
+    rad = rng.normal(size=(6, n)) + 1j * rng.normal(size=(6, n))
+    dif = rng.normal(size=n) + 0j
+    A = np.diag(np.arange(1.0, 7.0))
+    method = "direct" if recipe in ff.DIRECT_RECIPES else "indirect"
+    provider = dict(backend="capytaine", version="fake-3.0", path="/fake/capytaine/__init__.py", method=method,
+                    recipe=recipe, engine="Engine", green_function="AnyhydroDelhommeau") if provider is None else provider
+    settings = dict(finite_depth_prony_decomposition_method="python", finite_depth_prony_decomposition="fit-rev-1",
+                    imaginary_part="imag-rev-1") if gf_settings is None else gf_settings
+    return ff.FloatingFamilySnapshot(req, omega, v, f, ids, rad, dif, A, 0.1 * A, np.arange(6) + 1j, provider,
+                                     np.ones((2, 3)), 1.0, "python", settings,
+                                     panel_pressure_radiation=rad * 2, panel_pressure_incident_diffraction=dif + 1j,
+                                     centers=np.ones((n, 3)), normals=np.tile([0.0, 0.0, 1.0], (n, 1)), areas=np.ones(n))
+
+
+@pytest.mark.parametrize("recipe", [ff.RECIPE, ff.DIRECT_RECIPE])
+def test_family_coherence_refuses_provider_or_green_revision_splice_for_every_recipe(recipe):
+    """Review P1 (2026-11-16): coherence returned early for every non-lid recipe, so frequencies cached before and
+    after an owner-Green revision were spliced into one family without refusal."""
+    before = make_recipe_snapshot(0.6, recipe)
+    ff.validate_family_coherence([before, make_recipe_snapshot(0.9, recipe)])       # coherent family still accepted
+    revised = make_recipe_snapshot(0.9, recipe, gf_settings=dict(before.gf_settings, imaginary_part="imag-rev-2"))
+    with pytest.raises(WaveFieldError, match="Green-function settings differ"):
+        ff.validate_family_coherence([before, revised])
+    refit = make_recipe_snapshot(0.9, recipe, gf_settings=dict(before.gf_settings, finite_depth_prony_decomposition="fit-rev-2"))
+    with pytest.raises(WaveFieldError, match="Green-function settings differ"):
+        ff.validate_family_coherence([before, refit])
+    other = make_recipe_snapshot(0.9, recipe, provider=dict(before.provider, version="fake-3.1"))
+    with pytest.raises(WaveFieldError, match="provider"):
+        ff.validate_family_coherence([before, other])
+
+
+def test_family_coherence_refuses_mixed_non_lid_recipes():
+    with pytest.raises(WaveFieldError, match="different recipes"):
+        ff.validate_family_coherence([make_recipe_snapshot(0.6, ff.RECIPE), make_recipe_snapshot(0.9, ff.DIRECT_RECIPE)])
+
+
 def test_snapshot_identity_is_content_bound_and_immutable():
     s = make_snapshot()
     s.validate()

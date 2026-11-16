@@ -186,7 +186,7 @@ def test_exact_dirichlet_policy_feeds_zero_but_keeps_raw_failure_visible(fam):
         _build(fam, native=inconsistent)
 
 
-@pytest.mark.parametrize("case", ["unsorted", "geometry", "provider", "points", "a_inf", "damping", "dofs", "few",
+@pytest.mark.parametrize("case", ["unsorted", "geometry", "provider", "green_revision", "points", "a_inf", "damping", "dofs", "few",
                                   "type", "nan_phi", "shape_phi", "no_pressure"])
 def test_adapter_refuses_incoherent_family_data(fam, case):
     snaps = list(fam["snaps"])
@@ -200,6 +200,8 @@ def test_adapter_refuses_incoherent_family_data(fam, case):
         snaps[3] = fam["snapshot"](3, vertices=v2, request=req2)
     elif case == "provider":
         snaps[4] = fam["snapshot"](4, provider={**dict(snaps[4].provider), "version": "other"})
+    elif case == "green_revision":     # review P1 class (2026-11-16): owner-Green revision splice across frequencies
+        snaps[4] = fam["snapshot"](4, gf_settings={"imaginary_part": "imag-rev-2"})
     elif case == "points":
         p = fam["pts"].copy(); p[0, 0] += 1e-9
         kw["query_points"] = p

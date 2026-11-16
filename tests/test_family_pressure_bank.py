@@ -13,7 +13,7 @@ from anyhydro import floating_radiation_fields as ff
 from anyhydro.family_pressure_bank import (FamilyPressureBankError, floating_family_to_pressure_bank, linear_rao,
                                            snapshot_wrench_operator)
 from anyhydro.orcawave_pressure import ImportedPressureBank
-from anyhydro.wave_surface_fields import WaveFieldMissing
+from anyhydro.wave_surface_fields import WaveFieldError, WaveFieldMissing
 
 OMEGAS = (0.6, 0.9, 1.4)
 
@@ -47,13 +47,13 @@ def body_wrench(Q, cg, centers, normals, areas, p):
     return np.concatenate([Q.T @ force, Q.T @ moment])
 
 
-def make_snapshot(omega, rng, warp=0.):
+def make_snapshot(omega, rng, warp=0., recipe=None, gf_settings=None):
     v, f = box()
     v[3, 2] += warp
     n = len(f)
     Q0 = rotation(0.31, -0.22, 0.47)
     req = ff.family_request(v, f, [f'p{i}' for i in range(n)], heading=0.3, water_depth=50., rho=1025., gravity=9.81,
-                            Q0=Q0, cg_world=CG)
+                            Q0=Q0, cg_world=CG, recipe=recipe)
     quad = v[f]
     centers = quad.mean(axis=1)
     normals = np.cross(quad[:, 2] - quad[:, 0], quad[:, 3] - quad[:, 1])
@@ -66,10 +66,15 @@ def make_snapshot(omega, rng, warp=0.):
     G = np.array([body_wrench(Q0, CG, centers, normals, areas, ppr[k]) for k in range(6)]).T
     A, B = G.real / omega ** 2, G.imag / omega      # = w^2 A + i w B per unit displacement
     F = body_wrench(Q0, CG, centers, normals, areas, ppd)
+    if recipe is None:
+        provider, green = {'backend': 'synthetic'}, {}
+    else:                           # explicit recipe record: provider method + realised owner Green state
+        provider = {'backend': 'synthetic', 'method': 'direct' if recipe in ff.DIRECT_RECIPES else 'indirect'}
+        green = dict(prony=np.ones((2, 3)), prony_kh=1.0, prony_method='python', gf_settings=gf_settings)
     return ff.FloatingFamilySnapshot(req, omega, v, f, tuple(f'p{i}' for i in range(n)), rng.normal(size=(6, n)) + 0j,
-                                     rng.normal(size=n) + 0j, A, B, F, {'backend': 'synthetic'},
+                                     rng.normal(size=n) + 0j, A, B, F, provider,
                                      panel_pressure_radiation=ppr, panel_pressure_incident_diffraction=ppd,
-                                     centers=centers, normals=normals, areas=areas)
+                                     centers=centers, normals=normals, areas=areas, **green)
 
 
 @pytest.fixture()
@@ -142,6 +147,56 @@ def test_linear_rao_solves_equation_of_motion(family):
         linear_rao(s.omega, s.added_mass, s.damping, s.excitation, M[:5], C)
 
 
+def _rao_inputs():
+    s = make_snapshot(0.9, np.random.default_rng(13))
+    return dict(omega=s.omega, added_mass=np.array(s.added_mass), damping=np.array(s.damping),
+                excitation=np.array(s.excitation), mass=np.diag([5., 5, 5, 2, 2, 2]),
+                hydrostatic_stiffness=np.diag([0, 0, 40., 10, 10, 0]), extra_stiffness=np.diag([1., 1, 0, 0, 0, 1]))
+
+
+def test_linear_rao_refuses_infinite_mass_instead_of_an_accepted_finite_rao():
+    """Review P1 (2026-11-16): an infinite diagonal mass entry with otherwise finite inputs returned an accepted finite
+    RAO (all-zero in the reviewer's probe; finite non-zero for five of six entries of this coupled fixture)."""
+    for i in range(6):
+        kw = _rao_inputs()
+        kw['mass'][i, i] = np.inf
+        with pytest.raises(FamilyPressureBankError, match='finite'):
+            linear_rao(**kw)
+
+
+@pytest.mark.parametrize('name', ['mass', 'added_mass', 'damping', 'hydrostatic_stiffness', 'extra_stiffness',
+                                  'excitation'])
+@pytest.mark.parametrize('bad', [np.inf, -np.inf, np.nan])
+def test_linear_rao_refuses_every_non_finite_input_array(name, bad):
+    kw = _rao_inputs()
+    value = np.array(kw[name], dtype=complex if name == 'excitation' else float)
+    value.flat[0 if name == 'excitation' else 7] = bad
+    kw[name] = value
+    with pytest.raises(FamilyPressureBankError, match='finite'):
+        linear_rao(**kw)
+
+
+@pytest.mark.parametrize('omega', [np.inf, np.nan, 0., -1.])
+def test_linear_rao_refuses_non_finite_or_non_positive_omega(omega):
+    with pytest.raises(FamilyPressureBankError):
+        linear_rao(**dict(_rao_inputs(), omega=omega))
+
+
+def test_linear_rao_refuses_a_result_that_is_not_one_six_component_rao():
+    kw = _rao_inputs()
+    kw['excitation'] = np.eye(6, dtype=complex)          # several right-hand sides: not one RAO
+    with pytest.raises(FamilyPressureBankError, match=r'\(6,\)'):
+        linear_rao(**kw)
+
+
+def test_linear_rao_ordinary_result_is_unchanged():
+    kw = _rao_inputs()
+    w, M, A, B = kw['omega'], kw['mass'], kw['added_mass'], kw['damping']
+    C = kw['hydrostatic_stiffness'] + kw['extra_stiffness']
+    expect = np.linalg.solve(-w * w * (M + A) - 1j * w * B + C, kw['excitation'])
+    assert np.array_equal(linear_rao(**kw), expect)
+
+
 def test_refusals(family):
     cache, snaps = family
     req = snaps[0].request
@@ -157,6 +212,23 @@ def test_refusals(family):
         floating_family_to_pressure_bank(cache, req, OMEGAS, composition='total_with_source_motion')
     with pytest.raises(FamilyPressureBankError, match='contradicts'):
         floating_family_to_pressure_bank(cache, req, OMEGAS, np.ones((3, 6)), composition='fixed_diffraction')
+
+
+@pytest.mark.parametrize('recipe', [ff.RECIPE, ff.DIRECT_RECIPE])
+def test_bank_refuses_frequencies_cached_across_an_owner_green_revision(tmp_path, recipe):
+    """Review P1 (2026-11-16): frequencies cached before and after an owner-Green revision were combined into one
+    pressure bank without refusal under the non-lid recipes."""
+    rng = np.random.default_rng(11)
+    rev1 = dict(finite_depth_prony_decomposition='fit-rev-1', imaginary_part='imag-rev-1')
+    rev2 = dict(rev1, imaginary_part='imag-rev-2')
+    snaps = [make_snapshot(w, rng, recipe=recipe, gf_settings=rev2 if w == OMEGAS[1] else rev1) for w in OMEGAS]
+    for s in snaps:
+        ff.save_family_snapshot(tmp_path, s)
+    with pytest.raises(WaveFieldError, match='Green-function settings differ'):
+        floating_family_to_pressure_bank(tmp_path, snaps[0].request, OMEGAS)
+    # the coherent subset (same revision) is still accepted unchanged
+    bank = floating_family_to_pressure_bank(tmp_path, snaps[0].request, (OMEGAS[0], OMEGAS[2]))
+    assert np.array_equal(bank.responses[1], snaps[2].panel_pressure_incident_diffraction)
 
 
 def test_warped_quad_is_carried_unchanged_and_refused_by_the_geometry_owner(tmp_path):
