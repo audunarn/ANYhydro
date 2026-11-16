@@ -102,11 +102,23 @@ PORTABLE_TEST_MODULES = (
     "test_transform",
     "test_vessel_study",
     "test_vessel_study_basis",
+    "test_family_pressure_bank",
+    "test_floating_panel_capacity",
+    "test_l01_high_frequency_repair",
+    "test_l01_reference_repair",
 )
 
 # Test modules excluded from portable base CI, each with its concrete
 # dependency/fixture reason and the evidence gate that still applies.
 EXCLUDED_TEST_MODULES = {
+    "test_direct_lid_family": (
+        "four of its tests build the Capytaine-backed direct recovery; a clean base install has no Capytaine. "
+        "Remaining gate: the isolated backend qualification workflow."
+    ),
+    "test_floating_passivity": (
+        "three of its tests import Capytaine through the donor and direct-recipe routes; a clean base install has "
+        "no Capytaine. Remaining gate: the isolated backend qualification workflow."
+    ),
     "test_orcawave_pressure": (
         "checks external OrcaWave result records with ANYfileIO, ANYgeometry and an independent "
         "ANYloads resultant. Remaining gate: the prescribed-pressure integration workflow."

@@ -82,6 +82,7 @@ def family(tmp_path):
 
 
 def test_fixed_diffraction_reproduces_saved_pressure_and_closes_on_force(family):
+    pytest.importorskip("anygeometry", reason="validate_geometry needs ANYgeometry (the orcawave extra)")
     cache, snaps = family
     bank = floating_family_to_pressure_bank(cache, snaps[0].request, OMEGAS)
     assert bank.composition == 'fixed_diffraction'
@@ -159,6 +160,7 @@ def test_refusals(family):
 
 
 def test_warped_quad_is_carried_unchanged_and_refused_by_the_geometry_owner(tmp_path):
+    pytest.importorskip("anygeometry", reason="validate_geometry needs ANYgeometry (the orcawave extra)")
     """The adapter never repairs geometry: a quad outside the owner's planarity gate is refused downstream."""
     warped = make_snapshot(0.6, np.random.default_rng(5), warp=3e-13)
     ff.save_family_snapshot(tmp_path, warped)
