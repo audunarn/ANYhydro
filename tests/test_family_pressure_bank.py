@@ -147,6 +147,56 @@ def test_linear_rao_solves_equation_of_motion(family):
         linear_rao(s.omega, s.added_mass, s.damping, s.excitation, M[:5], C)
 
 
+def _rao_inputs():
+    s = make_snapshot(0.9, np.random.default_rng(13))
+    return dict(omega=s.omega, added_mass=np.array(s.added_mass), damping=np.array(s.damping),
+                excitation=np.array(s.excitation), mass=np.diag([5., 5, 5, 2, 2, 2]),
+                hydrostatic_stiffness=np.diag([0, 0, 40., 10, 10, 0]), extra_stiffness=np.diag([1., 1, 0, 0, 0, 1]))
+
+
+def test_linear_rao_refuses_infinite_mass_instead_of_an_accepted_finite_rao():
+    """Review P1 (2026-11-16): an infinite diagonal mass entry with otherwise finite inputs returned an accepted finite
+    RAO (all-zero in the reviewer's probe; finite non-zero for five of six entries of this coupled fixture)."""
+    for i in range(6):
+        kw = _rao_inputs()
+        kw['mass'][i, i] = np.inf
+        with pytest.raises(FamilyPressureBankError, match='finite'):
+            linear_rao(**kw)
+
+
+@pytest.mark.parametrize('name', ['mass', 'added_mass', 'damping', 'hydrostatic_stiffness', 'extra_stiffness',
+                                  'excitation'])
+@pytest.mark.parametrize('bad', [np.inf, -np.inf, np.nan])
+def test_linear_rao_refuses_every_non_finite_input_array(name, bad):
+    kw = _rao_inputs()
+    value = np.array(kw[name], dtype=complex if name == 'excitation' else float)
+    value.flat[0 if name == 'excitation' else 7] = bad
+    kw[name] = value
+    with pytest.raises(FamilyPressureBankError, match='finite'):
+        linear_rao(**kw)
+
+
+@pytest.mark.parametrize('omega', [np.inf, np.nan, 0., -1.])
+def test_linear_rao_refuses_non_finite_or_non_positive_omega(omega):
+    with pytest.raises(FamilyPressureBankError):
+        linear_rao(**dict(_rao_inputs(), omega=omega))
+
+
+def test_linear_rao_refuses_a_result_that_is_not_one_six_component_rao():
+    kw = _rao_inputs()
+    kw['excitation'] = np.eye(6, dtype=complex)          # several right-hand sides: not one RAO
+    with pytest.raises(FamilyPressureBankError, match=r'\(6,\)'):
+        linear_rao(**kw)
+
+
+def test_linear_rao_ordinary_result_is_unchanged():
+    kw = _rao_inputs()
+    w, M, A, B = kw['omega'], kw['mass'], kw['added_mass'], kw['damping']
+    C = kw['hydrostatic_stiffness'] + kw['extra_stiffness']
+    expect = np.linalg.solve(-w * w * (M + A) - 1j * w * B + C, kw['excitation'])
+    assert np.array_equal(linear_rao(**kw), expect)
+
+
 def test_refusals(family):
     cache, snaps = family
     req = snaps[0].request

@@ -36,9 +36,18 @@ def linear_rao(omega, added_mass, damping, excitation, mass, hydrostatic_stiffne
     M, A, B, C = (np.asarray(x, float) for x in (mass, added_mass, damping, hydrostatic_stiffness))
     if any(x.shape != (6, 6) for x in (M, A, B, C)) or not math.isfinite(w) or w <= 0:
         raise FamilyPressureBankError('linear_rao needs 6x6 mass, added mass, damping, stiffness and omega>0')
-    if extra_stiffness is not None:
-        C = C + np.asarray(extra_stiffness, float)
-    xi = np.linalg.solve(-w * w * (M + A) - 1j * w * B + C, np.asarray(excitation, complex))
+    F = np.asarray(excitation, complex)
+    K = None if extra_stiffness is None else np.asarray(extra_stiffness, float)
+    # an infinite/NaN coefficient can still give an accepted finite (e.g. all-zero) RAO: refuse every input first
+    for name, x in (('mass', M), ('added mass', A), ('damping', B), ('hydrostatic stiffness', C),
+                    ('extra stiffness', K), ('excitation', F)):
+        if x is not None and not np.isfinite(x).all():
+            raise FamilyPressureBankError(f'linear_rao needs a finite {name}')
+    if K is not None:
+        C = C + K
+    xi = np.linalg.solve(-w * w * (M + A) - 1j * w * B + C, F)
+    if xi.shape != (6,):
+        raise FamilyPressureBankError(f'linear_rao must give one (6,) RAO, not shape {xi.shape}')
     if not np.isfinite(xi).all():
         raise FamilyPressureBankError('non-finite RAO')
     return xi
