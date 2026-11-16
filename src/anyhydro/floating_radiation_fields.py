@@ -409,17 +409,22 @@ def validate_family_coherence(snapshots):
 
     Realized Prony arrays and kh are frequency-specific and deliberately excluded.
     Existing owner settings contain the Prony/imaginary-kernel revision identities.
+    Applies to EVERY recipe: one recipe, one provider and one Green-function settings identity per family.
     """
-    lid = [s for s in snapshots if s.request.get('recipe') == DIRECT_LID_RECIPE]
-    if not lid:
+    snaps = list(snapshots)
+    if not snaps:
         return
-    if len(lid) != len(snapshots):
+    lid = [s for s in snaps if s.request.get('recipe') == DIRECT_LID_RECIPE]
+    if lid and len(lid) != len(snaps):
         raise WaveFieldError('cannot splice different recipes into a direct lid family')
-    reference = _json(dict(provider=lid[0].provider, gf_settings=lid[0].gf_settings))
-    for snap in lid:
+    if len({s.request.get('recipe') for s in snaps}) != 1:
+        raise WaveFieldError('cannot splice different recipes into one floating field family')
+    reference = _json(dict(provider=snaps[0].provider, gf_settings=snaps[0].gf_settings))
+    for snap in snaps:
         snap.validate()
         if _json(dict(provider=snap.provider, gf_settings=snap.gf_settings)) != reference:
-            raise WaveFieldError('direct lid family provider/Green-function settings differ across frequencies')
+            raise WaveFieldError(('direct lid family' if lid else 'floating field family')
+                                 + ' provider/Green-function settings differ across frequencies')
 
 
 def solve_family_snapshot(vertices, faces, surface_ids, omega, *, heading, water_depth, rho=1025., gravity=9.81, Q0, cg_world,

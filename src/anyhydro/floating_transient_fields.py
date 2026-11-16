@@ -207,6 +207,9 @@ def build_family_radiation_field_kernel(
     for s in snaps[1:]:
         _fail(radiation_key(s.request) == key0, "snapshots belong to different radiation bases (geometry/axes/environment)")
         _fail(_canon({k: s.provider.get(k) for k in _PROVIDER_KEYS}) == prov0, "snapshots come from different providers")
+        # owner Green-function settings carry the Prony/imaginary-kernel revision identities: one revision per family
+        _fail(_canon(s.gf_settings) == _canon(first.gf_settings),
+              "snapshots come from different Green-function settings (owner Green revision)")
         _fail(np.array_equal(s.vertices, first.vertices) and np.array_equal(s.faces, first.faces)
               and tuple(s.surface_ids) == tuple(first.surface_ids), "snapshot geometry / face labels differ")
     omegas = np.array([float(s.omega) for s in snaps])

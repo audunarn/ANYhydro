@@ -13,7 +13,7 @@ from anyhydro import floating_radiation_fields as ff
 from anyhydro.family_pressure_bank import (FamilyPressureBankError, floating_family_to_pressure_bank, linear_rao,
                                            snapshot_wrench_operator)
 from anyhydro.orcawave_pressure import ImportedPressureBank
-from anyhydro.wave_surface_fields import WaveFieldMissing
+from anyhydro.wave_surface_fields import WaveFieldError, WaveFieldMissing
 
 OMEGAS = (0.6, 0.9, 1.4)
 
@@ -47,13 +47,13 @@ def body_wrench(Q, cg, centers, normals, areas, p):
     return np.concatenate([Q.T @ force, Q.T @ moment])
 
 
-def make_snapshot(omega, rng, warp=0.):
+def make_snapshot(omega, rng, warp=0., recipe=None, gf_settings=None):
     v, f = box()
     v[3, 2] += warp
     n = len(f)
     Q0 = rotation(0.31, -0.22, 0.47)
     req = ff.family_request(v, f, [f'p{i}' for i in range(n)], heading=0.3, water_depth=50., rho=1025., gravity=9.81,
-                            Q0=Q0, cg_world=CG)
+                            Q0=Q0, cg_world=CG, recipe=recipe)
     quad = v[f]
     centers = quad.mean(axis=1)
     normals = np.cross(quad[:, 2] - quad[:, 0], quad[:, 3] - quad[:, 1])
@@ -66,10 +66,15 @@ def make_snapshot(omega, rng, warp=0.):
     G = np.array([body_wrench(Q0, CG, centers, normals, areas, ppr[k]) for k in range(6)]).T
     A, B = G.real / omega ** 2, G.imag / omega      # = w^2 A + i w B per unit displacement
     F = body_wrench(Q0, CG, centers, normals, areas, ppd)
+    if recipe is None:
+        provider, green = {'backend': 'synthetic'}, {}
+    else:                           # explicit recipe record: provider method + realised owner Green state
+        provider = {'backend': 'synthetic', 'method': 'direct' if recipe in ff.DIRECT_RECIPES else 'indirect'}
+        green = dict(prony=np.ones((2, 3)), prony_kh=1.0, prony_method='python', gf_settings=gf_settings)
     return ff.FloatingFamilySnapshot(req, omega, v, f, tuple(f'p{i}' for i in range(n)), rng.normal(size=(6, n)) + 0j,
-                                     rng.normal(size=n) + 0j, A, B, F, {'backend': 'synthetic'},
+                                     rng.normal(size=n) + 0j, A, B, F, provider,
                                      panel_pressure_radiation=ppr, panel_pressure_incident_diffraction=ppd,
-                                     centers=centers, normals=normals, areas=areas)
+                                     centers=centers, normals=normals, areas=areas, **green)
 
 
 @pytest.fixture()
@@ -157,6 +162,23 @@ def test_refusals(family):
         floating_family_to_pressure_bank(cache, req, OMEGAS, composition='total_with_source_motion')
     with pytest.raises(FamilyPressureBankError, match='contradicts'):
         floating_family_to_pressure_bank(cache, req, OMEGAS, np.ones((3, 6)), composition='fixed_diffraction')
+
+
+@pytest.mark.parametrize('recipe', [ff.RECIPE, ff.DIRECT_RECIPE])
+def test_bank_refuses_frequencies_cached_across_an_owner_green_revision(tmp_path, recipe):
+    """Review P1 (2026-11-16): frequencies cached before and after an owner-Green revision were combined into one
+    pressure bank without refusal under the non-lid recipes."""
+    rng = np.random.default_rng(11)
+    rev1 = dict(finite_depth_prony_decomposition='fit-rev-1', imaginary_part='imag-rev-1')
+    rev2 = dict(rev1, imaginary_part='imag-rev-2')
+    snaps = [make_snapshot(w, rng, recipe=recipe, gf_settings=rev2 if w == OMEGAS[1] else rev1) for w in OMEGAS]
+    for s in snaps:
+        ff.save_family_snapshot(tmp_path, s)
+    with pytest.raises(WaveFieldError, match='Green-function settings differ'):
+        floating_family_to_pressure_bank(tmp_path, snaps[0].request, OMEGAS)
+    # the coherent subset (same revision) is still accepted unchanged
+    bank = floating_family_to_pressure_bank(tmp_path, snaps[0].request, (OMEGAS[0], OMEGAS[2]))
+    assert np.array_equal(bank.responses[1], snaps[2].panel_pressure_incident_diffraction)
 
 
 def test_warped_quad_is_carried_unchanged_and_refused_by_the_geometry_owner(tmp_path):
